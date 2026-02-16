@@ -40,11 +40,14 @@ long long getNodeCounter() {
     return nodeCount.load(std::memory_order_relaxed);
 }
 
+// Start TIME CONTROL (& tt) params
 std::atomic<bool> stop_search(false);
 std::atomic<long long> time_limit_ms{0};          // Time limit (atomic for thread-safety)
 std::atomic<long long> start_time_ms{0};          // Start time in milliseconds since epoch (atomic for thread-safety)
 std::atomic<bool> is_time_limited{false};         // Do we have time limit? (atomic for thread-safety)
 std::atomic<bool> use_tt(true);
+// End TIME CONTROL params
+
 
 namespace {
 SearchParams g_search_params{};
@@ -547,14 +550,26 @@ int negamax(Board& board, int depth, int alpha, int beta, int ply, std::vector<u
     return maxEval;
 }
 
-Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<uint64_t>& positionHistory, int ply) {
 
-    // Reset variables
-    resetNodeCounter();
-    stop_search.store(false, std::memory_order_relaxed);
-    const SearchParams& params = get_search_params();
-    
-    // Time settings
+// HELPERS FOR ROOT SEARCH
+namespace {
+    struct SearchSession{
+        Board& board;
+        int maxDepth;
+        int movetimeMs;
+        int ply;
+        const SearchParams& params;
+        std::vector<Move> possibleMoves;
+        Move bestMoveSoFar;
+        std::vector<uint64_t> localPositionHistory;
+        int lastScore;
+        std::chrono::steady_clock::time_point searchStart;
+        bool timeLimited;
+        int effectiveMaxDepth;
+    };
+
+
+void configure_time_limit(const int& movetimeMs) {
     auto now = std::chrono::steady_clock::now();
     start_time_ms.store(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count(), std::memory_order_relaxed);
     if (movetimeMs > 0) {
@@ -566,29 +581,225 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
         is_time_limited.store(false, std::memory_order_relaxed);
         time_limit_ms.store(0, std::memory_order_relaxed);
     }
+}
+
+void order_moves(const Board& board, std::vector<Move>& allMoves){
+    std::sort(allMoves.begin(), allMoves.end(), [&](const Move& a, const Move& b) {
+        return scoreMove(board, a, 0, nullptr) > scoreMove(board, b, 0, nullptr);
+    }); // Order moves by heuristic scores so that we start with the most promising move for better alpha-beta performance and aspiration windows
+}
+
+std::vector<uint64_t> init_local_history(const std::vector<uint64_t>& positionHistory) {
+    std::vector<uint64_t> localPositionHistory; // Local copy of position history for this search thread, used for repetition detection. We keep only the last 100 positions to save memory and because threefold repetition is unlikely beyond that.
+    localPositionHistory.reserve(std::min((size_t)100, positionHistory.size()) + 1);
+    auto startIt = (positionHistory.size() > 100) ? (positionHistory.end() - 100) : positionHistory.begin(); // Keep only last 100 entries
+    localPositionHistory.assign(startIt, positionHistory.end());
+    return localPositionHistory;
+}
+
+void reorder_with_pv(const Board& board, std::vector<Move>& possibleMoves, const Move& bestMoveSoFar) {
+    std::stable_sort(possibleMoves.begin(), possibleMoves.end(), [&](const Move& a, const Move& b) {
+        const bool aIsPV = (a.fromRow == bestMoveSoFar.fromRow && a.fromCol == bestMoveSoFar.fromCol && a.toRow == bestMoveSoFar.toRow && a.toCol == bestMoveSoFar.toCol && a.promotion == bestMoveSoFar.promotion);
+        const bool bIsPV = (b.fromRow == bestMoveSoFar.fromRow && b.fromCol == bestMoveSoFar.fromCol && b.toRow == bestMoveSoFar.toRow && b.toCol == bestMoveSoFar.toCol && b.promotion == bestMoveSoFar.promotion);
+
+        // Strict-weak-ordering: comparator must be irreflexive (never a < a).
+        if (aIsPV != bIsPV) return aIsPV;
+
+        const int sa = scoreMove(board, a, 0, nullptr);
+        const int sb = scoreMove(board, b, 0, nullptr);
+        if (sa != sb) return sa > sb;
+
+        // Deterministic tie-breaker.
+        if (a.fromRow != b.fromRow) return a.fromRow < b.fromRow;
+        if (a.fromCol != b.fromCol) return a.fromCol < b.fromCol;
+        if (a.toRow != b.toRow) return a.toRow < b.toRow;
+        if (a.toCol != b.toCol) return a.toCol < b.toCol;
+        return a.promotion < b.promotion;
+    });
+}
+
+void search_moves_for_one_depth(
+    Board& board,
+    const std::vector<Move>& possibleMoves,
+    int depth,
+    int& alpha,
+    int beta,
+    int ply,
+    std::vector<uint64_t>& localPositionHistory,
+    int& bestValue,
+    Move& currentDepthBestMove,
+    std::vector<Move>& bestPvForDepth,
+    bool& thisDepthCompleted
+) {
+    for (Move move : possibleMoves) {
+        if (stop_search.load(std::memory_order_relaxed)) {
+            thisDepthCompleted = false;
+            break;
+        }
+
+        board.makeMove(move);
+
+        std::vector<Move> childPv;
+        uint64_t newHash = position_key(board);
+        localPositionHistory.push_back(newHash);
+        int val = -negamax(board, depth - 1, -beta, -alpha, ply + 1, localPositionHistory, childPv);
+        localPositionHistory.pop_back();
+
+        board.unmakeMove(move);
+
+        if (stop_search.load(std::memory_order_relaxed)) {
+            thisDepthCompleted = false;
+            break;
+        }
+
+        if (val > bestValue) {
+            bestValue = val;
+            currentDepthBestMove = move;
+            bestPvForDepth.clear();
+            bestPvForDepth.push_back(move);
+            bestPvForDepth.insert(bestPvForDepth.end(), childPv.begin(), childPv.end());
+
+            if (bestValue > alpha) {
+                alpha = bestValue;
+                if (alpha >= beta) {
+                    break;
+                }
+            }
+        }
+    }
+}
+void emit_info_line(
+    int depth,
+    int bestValue,
+    const std::vector<Move>& bestPvForDepth,
+    const std::chrono::steady_clock::time_point& searchStart
+) {
+    auto searchEnd = std::chrono::steady_clock::now();
+    long long duration = std::chrono::duration_cast<std::chrono::milliseconds>(searchEnd - searchStart).count();
+    std::cout << "info depth " << depth << " ";
+    long long nps = 0;
+    if (duration > 0) {
+        nps = (getNodeCounter() * 1000LL) / duration;
+    }
+    if (std::abs(bestValue) >= MATE_SCORE - 1000) {
+        int mateIn = (MATE_SCORE - std::abs(bestValue) + 1) / 2;
+        if (bestValue < 0) mateIn = -mateIn;
+        std::cout << "score mate " << mateIn;
+    } else {
+        std::cout << "score cp " << bestValue;
+    }
+    std::cout << " time " << duration
+                << " nps " << nps
+                << " pv ";
+    for (const Move& pvMove : bestPvForDepth) {
+        std::cout << move_to_uci(pvMove) << " ";
+    }
+    std::cout << std::endl;
+}
+
+int search_one_depth_with_aspiration(
+    Board& board,
+    const SearchParams& params,
+    std::vector<Move>& possibleMoves,
+    int depth,
+    int ply,
+    std::vector<uint64_t>& localPositionHistory,
+    Move& bestMoveSoFar,
+    int& lastScore,
+    const std::chrono::steady_clock::time_point& searchStart
+) {
+    int delta = params.aspiration_delta; // Aspiration window margin
+    int alpha = -VALUE_INF;
+    int beta = VALUE_INF;
+    int bestValue = std::numeric_limits<int>::min() / 2;
+
+    if (params.use_aspiration && depth >= 5) {
+        alpha = std::max(-VALUE_INF, lastScore - delta);
+        beta = std::min(VALUE_INF, lastScore + delta);
+    }
+
+    while (true) {
+        const int alphaStart = alpha;
+        const int betaStart = beta;
+        bestValue = std::numeric_limits<int>::min() / 2;
+        Move currentDepthBestMove; // Only the best move found at this depth
+        bool thisDepthCompleted = true; // Is this depth completed?
+
+        if (depth > 1) {
+            reorder_with_pv(board, possibleMoves, bestMoveSoFar);
+        }
+
+        std::vector<Move> bestPvForDepth;
+        search_moves_for_one_depth(
+            board,
+            possibleMoves,
+            depth,
+            alpha,
+            beta,
+            ply,
+            localPositionHistory,
+            bestValue,
+            currentDepthBestMove,
+            bestPvForDepth,
+            thisDepthCompleted
+        );
+
+        if (stop_search.load(std::memory_order_relaxed)) {
+            break;
+        }
+
+        if (params.use_aspiration && depth >= 5 && (bestValue <= alphaStart || bestValue >= betaStart)) {
+            alpha = std::max(-VALUE_INF, bestValue - delta);
+            beta = std::min(VALUE_INF, bestValue + delta);
+            delta += delta / 2;
+            continue;
+        }
+
+        if (thisDepthCompleted && (bestValue > std::numeric_limits<int>::min() / 2)) {
+            bestMoveSoFar = currentDepthBestMove;
+            lastScore = bestValue;
+            emit_info_line(depth, bestValue, bestPvForDepth, searchStart);
+        }
+        break;
+    }
+
+    return bestValue;
+}
+}
+
+// HELPERS END HERE
+
+Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<uint64_t>& positionHistory, int ply) {
+
+    // Reset variables
+    resetNodeCounter();
+    stop_search.store(false, std::memory_order_relaxed);
+
+    // Get search parameters (like LMR, aspiration windows, etc.) from the global settings
+    const SearchParams& params = get_search_params();
+    
+    // Time settings
+    configure_time_limit(movetimeMs);
 
     // Generate and order moves before starting the search, so we have a good move to start with for alpha-beta and aspiration windows
     bool isWhite = board.isWhiteTurn;
     std::vector<Move> possibleMoves = get_all_moves(board, isWhite); // get all possible moves
-    std::sort(possibleMoves.begin(), possibleMoves.end(), [&](const Move& a, const Move& b) {
-        return scoreMove(board, a, 0, nullptr) > scoreMove(board, b, 0, nullptr);
-    }); // Order moves by heuristic scores so that we start with the most promising move for better alpha-beta performance and aspiration windows
+
+    order_moves(board, possibleMoves); // Pass the moves with reference so they get ordered in place by their heuristic scores (captures, promotions, TT move, history, etc.)
+
     if (possibleMoves.empty()) return {};
     if (possibleMoves.size() == 1) return possibleMoves[0];
+
 
     Move bestMoveSoFar = possibleMoves[0];
 
     auto gSearchStart = std::chrono::steady_clock::now();
     auto gTimeLimited = (movetimeMs > 0);
-    auto gTimeLimitMs = gTimeLimited ? movetimeMs : std::numeric_limits<int>::max();
     const int effectiveMaxDepth = gTimeLimited ? 128 : maxDepth;
 
     int bestValue; // Best score found at the current depth
 
-    std::vector<uint64_t> localPositionHistory; // Local copy of position history for this search thread, used for repetition detection. We keep only the last 100 positions to save memory and because threefold repetition is unlikely beyond that.
-    localPositionHistory.reserve(std::min((size_t)100, positionHistory.size()) + 1);
-    auto startIt = (positionHistory.size() > 100) ? (positionHistory.end() - 100) : positionHistory.begin(); // Keep only last 100 entries
-    localPositionHistory.assign(startIt, positionHistory.end());
+    std::vector<uint64_t> localPositionHistory = init_local_history(positionHistory);
 
     int lastScore = 0; // for aspiration windows
 
@@ -596,126 +807,17 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
 
         if (stop_search.load(std::memory_order_relaxed)) break;
 
-        int delta = params.aspiration_delta; // Aspiration window margin
-        int alpha = -VALUE_INF;
-        int beta = VALUE_INF;
-        
-        if (params.use_aspiration && depth >= 5){
-            alpha = std::max(-VALUE_INF, lastScore - delta);
-            beta = std::min(VALUE_INF, lastScore + delta);
-        }
-        while (true) {
-            const int alphaStart = alpha;
-            const int betaStart = beta;
-            bestValue = std::numeric_limits<int>::min() / 2;
-            Move currentDepthBestMove; // Only the best move found at this depth
-            bool thisDepthCompleted = true; // Is this depth completed?
-
-            // PV Move Ordering (Put the best move from the previous depth first)
-            if (depth > 1) {
-                // Here we use bestMoveSoFar because it was the winner of the previous depth
-                Move pvMove = bestMoveSoFar; 
-                std::stable_sort(possibleMoves.begin(), possibleMoves.end(), [&](const Move& a, const Move& b) {
-                    const bool aIsPV = (a.fromRow == pvMove.fromRow && a.fromCol == pvMove.fromCol && a.toRow == pvMove.toRow && a.toCol == pvMove.toCol && a.promotion == pvMove.promotion);
-                    const bool bIsPV = (b.fromRow == pvMove.fromRow && b.fromCol == pvMove.fromCol && b.toRow == pvMove.toRow && b.toCol == pvMove.toCol && b.promotion == pvMove.promotion);
-
-                    // Strict-weak-ordering: comparator must be irreflexive (never a < a).
-                    if (aIsPV != bIsPV) return aIsPV;
-
-                    const int sa = scoreMove(board, a, 0, nullptr);
-                    const int sb = scoreMove(board, b, 0, nullptr);
-                    if (sa != sb) return sa > sb;
-
-                    // Deterministic tie-breaker.
-                    if (a.fromRow != b.fromRow) return a.fromRow < b.fromRow;
-                    if (a.fromCol != b.fromCol) return a.fromCol < b.fromCol;
-                    if (a.toRow != b.toRow) return a.toRow < b.toRow;
-                    if (a.toCol != b.toCol) return a.toCol < b.toCol;
-                    return a.promotion < b.promotion;
-                });
-            }
-
-            std::vector<Move> bestPvForDepth;
-            for (Move move : possibleMoves) {
-                if (stop_search.load(std::memory_order_relaxed)) {
-                    thisDepthCompleted = false;
-                    break; 
-                }
-
-                board.makeMove(move);
-
-                std::vector<Move> childPv;
-
-                uint64_t newHash = position_key(board);
-                localPositionHistory.push_back(newHash);
-                int val = -negamax(board, depth - 1, -beta, -alpha, ply + 1, localPositionHistory, childPv);
-                localPositionHistory.pop_back();
-                
-                board.unmakeMove(move);
-
-                if (stop_search.load(std::memory_order_relaxed)) {
-                    thisDepthCompleted = false;
-                    break; 
-                }
-
-                if (val > bestValue) {
-                    bestValue = val;
-                    currentDepthBestMove = move;
-                    bestPvForDepth.clear();
-                    bestPvForDepth.push_back(move);
-                    bestPvForDepth.insert(bestPvForDepth.end(), childPv.begin(), childPv.end());
-                    
-                    if (bestValue > alpha) {
-                        alpha = bestValue;
-
-                        if (alpha >= beta) {
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (stop_search.load(std::memory_order_relaxed)) {
-                break; 
-            }
-
-            // Aspiration window re-search logic
-            if (params.use_aspiration && depth >= 5 && (bestValue <= alphaStart || bestValue >= betaStart)) {
-                // Fail-low or fail-high: widen the window and re-search this depth.
-                alpha = std::max(-VALUE_INF, bestValue - delta);
-                beta = std::min(VALUE_INF, bestValue + delta);
-                delta += delta / 2;
-                continue; // Restart the depth search
-            }
-
-
-            if (thisDepthCompleted && (bestValue > std::numeric_limits<int>::min() / 2)) {
-                bestMoveSoFar = currentDepthBestMove;
-                lastScore = bestValue;
-                auto searchEnd = std::chrono::steady_clock::now();
-                long long duration = std::chrono::duration_cast<std::chrono::milliseconds>(searchEnd - gSearchStart).count();
-                std::cout << "info depth " << depth << " ";
-                long long nps = 0;
-                if (duration > 0) {
-                    nps = (getNodeCounter() * 1000LL) / duration;
-                }
-                if (std::abs(bestValue) >= MATE_SCORE - 1000) {
-                    int mateIn = (MATE_SCORE - std::abs(bestValue) + 1) / 2;
-                    if (bestValue < 0) mateIn = -mateIn;
-                    std::cout << "score mate " << mateIn;
-                } else {
-                    std::cout << "score cp " << bestValue;
-                }
-                std::cout << " time " << duration
-                            << " nps " << nps
-                            << " pv ";
-                for (const Move& pvMove : bestPvForDepth) {
-                    std::cout << move_to_uci(pvMove) << " ";
-                }
-                std::cout << std::endl;
-            }
-            break; // Exit aspiration window loop
-        }
+        bestValue = search_one_depth_with_aspiration(
+            board,
+            params,
+            possibleMoves,
+            depth,
+            ply,
+            localPositionHistory,
+            bestMoveSoFar,
+            lastScore,
+            gSearchStart
+        );
         
         if (stop_search.load(std::memory_order_relaxed) || bestValue >= MATE_SCORE - 50) {
             break;
