@@ -199,7 +199,6 @@ int handle_uci_commands(int argc, char* argv[]){
         std::cout << "SoloEngine version " << VERSION << std::endl;
         return 0;
     } else if (argc > 1 && normalize_cli_line(argv[1]).rfind("genfens", 0) == 0) {
-        // One-shot CLI mode, e.g.:
         // SoloEngine.exe "genfens 4 seed 123 book None" "quit"
         if (normalize_cli_line(argv[1]) == "genfens") {
             std::string line;
