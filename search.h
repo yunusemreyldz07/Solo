@@ -19,6 +19,7 @@ struct SearchParams {
 	bool use_lmp = true;          // Late Move Pruning
 	bool use_aspiration = true;   // Aspiration windows in iterative deepening
 	bool use_qsearch_see = true; // SEE-based pruning inside quiescence
+	bool use_singular_extensions = true; // Singular extensions
 
 	int lmp_min_depth = 4;        // Minimum depth to consider LMP
 	int lmp_max_depth = 8;        // Maximum depth to consider LMP

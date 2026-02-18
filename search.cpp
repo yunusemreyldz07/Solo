@@ -20,6 +20,11 @@ int LMR_TABLE[256][256];
 float LMR_BASE = 0.77f;
 float LMR_DIVISION = 2.32f;
 
+// Singular Extensions
+int SE_DEPTH = 5;
+int SE_SUBTRACTOR = 3;
+
+
 void initLMRtables(){
     for(int depth = 0; depth < 256; depth++){
         for(int moveNum = 0; moveNum < 256; moveNum++){
@@ -692,8 +697,29 @@ int negamax(Board& board, int depth, int alpha, int beta, int ply, std::vector<u
     
     for (Move& move : possibleMoves) {
 
+        // Singular Extensions
+        int extension = 0;
+        Move singularMove;
+        if (params.use_singular_extensions && depth >= SE_DEPTH && ttDepth >= depth - SE_SUBTRACTOR && ttFlag != BETA && moves_equal(move, ttMove) && ttScore < MATE_SCORE -1000) {
+
+            int singularBeta = ttScore - depth * 5 ;
+            int singularDepth = (depth-1)/2;
+
+            singularMove = move;
+
+            board.makeMove(singularMove);
+
+            int singularScore = -negamax(board, singularDepth, -singularBeta, -singularBeta + 1, ply + 1, positionHistory, pvLine);
+
+            board.unmakeMove(singularMove);
+
+            if (singularScore < singularBeta) {
+                extension++; // Extend this move by 1 ply
+            }
+        }
+
         // Futility Pruning
-        if (depth < 3 && !inCheck && move.promotion == 0 && is_quiet(move)) {
+        if (depth < 3 && !inCheck && move.promotion == 0 && is_quiet(move) && !moves_equal(move, singularMove)) {
             int futilityMargin = 100 + 60 * depth; // Margin increases with depth
             if (staticEval + futilityMargin < alpha) {
                 continue; // Skip this move, it's unlikely to raise the evaluation enough
@@ -707,7 +733,7 @@ int negamax(Board& board, int depth, int alpha, int beta, int ply, std::vector<u
             depth >= params.lmp_min_depth &&
             depth <= params.lmp_max_depth &&
             movesSearched >= lmpCount &&
-            !inCheck && move.promotion == 0 && move.capturedPiece == 0) {
+            !inCheck && move.promotion == 0 && move.capturedPiece == 0 && !moves_equal(move, singularMove)) {
             if (!move.isEnPassant) {
                 continue; // skip this move (late move pruning)
             }
@@ -715,7 +741,7 @@ int negamax(Board& board, int depth, int alpha, int beta, int ply, std::vector<u
 
         // SEE PVS Pruning
         int seeThreshold = is_quiet(move) ? -67 * depth : -32 * depth * depth;
-        if (movesSearched > 0 && !staticExchangeEvaluation(board, move, seeThreshold)) {
+        if (movesSearched > 0 && !staticExchangeEvaluation(board, move, seeThreshold) && !moves_equal(move, singularMove)) {
             continue;
         }
 
@@ -724,8 +750,11 @@ int negamax(Board& board, int depth, int alpha, int beta, int ply, std::vector<u
         std::vector<Move> childPv;
         uint64_t newHash = position_key(board);
         positionHistory.push_back(newHash);
+
+        int newDepth = depth - 1 + extension;
+
         if (firstMove){
-            eval = -negamax(board, depth - 1, -beta, -alpha, ply + 1, positionHistory, childPv);
+            eval = -negamax(board, newDepth, -beta, -alpha, ply + 1, positionHistory, childPv);
             firstMove = false;
         }
         else {
@@ -733,26 +762,26 @@ int negamax(Board& board, int depth, int alpha, int beta, int ply, std::vector<u
             int reduction = 0;
             std::vector<Move> nullWindowPv;
             if (params.use_lmr &&
-                depth > 1 && is_quiet(move)) {
+                depth > 1 && is_quiet(move) && !moves_equal(move, singularMove)) {
                 int lmrTableDepth = std::min(depth, 255);
                 int lmrTableMovesSearched = std::min(movesSearched, 255);
                 reduction = LMR_TABLE[lmrTableDepth][lmrTableMovesSearched]; // Increase reduction with depth
                 if (reduction < 0) reduction = 0;
-                if (reduction > depth - 1) reduction = depth - 1;
-                if (depth - 1 - reduction < 1) reduction = depth - 2; // Ensure we dont search negative depth
+                if (reduction > newDepth - 1) reduction = newDepth - 1;
+                if (newDepth - reduction < 1) reduction = newDepth - 1; // Ensure we dont search negative depth
             }
-            int lmrDepth = std::max(0, depth - 1 - reduction);
+            int lmrDepth = std::max(0, newDepth - reduction);
 
             eval = -negamax(board, lmrDepth, -alpha - 1, -alpha, ply + 1, positionHistory, nullWindowPv);
 
             if (reduction > 0 && eval > alpha) {
                 // Re-search at full depth if reduced search suggests a better move
-                eval = -negamax(board, depth - 1, -alpha - 1, -alpha, ply + 1, positionHistory, childPv);
+                eval = -negamax(board, newDepth, -alpha - 1, -alpha, ply + 1, positionHistory, childPv);
             }
 
             if (eval > alpha && eval < beta) {
                 childPv.clear();
-                eval = -negamax(board, depth - 1, -beta, -alpha, ply + 1, positionHistory, childPv);
+                eval = -negamax(board, newDepth, -beta, -alpha, ply + 1, positionHistory, childPv);
             } else {
                 childPv.clear();
             }
