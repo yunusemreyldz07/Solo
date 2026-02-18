@@ -699,22 +699,23 @@ int negamax(Board& board, int depth, int alpha, int beta, int ply, std::vector<u
 
         // Singular Extensions
         int extension = 0;
-        Move singularMove;
+        bool singularExtended = false;
         if (params.use_singular_extensions && depth >= SE_DEPTH && ttDepth >= depth - SE_SUBTRACTOR && ttFlag != BETA && moves_equal(move, ttMove) && ttScore < MATE_SCORE -1000) {
 
             int singularBeta = ttScore - depth * 5 ;
             int singularDepth = (depth-1)/2;
 
-            singularMove = move;
-
-            board.makeMove(singularMove);
-
-            int singularScore = -negamax(board, singularDepth, -singularBeta, -singularBeta + 1, ply + 1, positionHistory, pvLine);
-
-            board.unmakeMove(singularMove);
+            board.makeMove(move);
+            uint64_t singularHash = position_key(board);
+            positionHistory.push_back(singularHash);
+            std::vector<Move> singularPv;
+            int singularScore = -negamax(board, singularDepth, -singularBeta, -singularBeta + 1, ply + 1, positionHistory, singularPv);
+            if (!positionHistory.empty()) positionHistory.pop_back();
+            board.unmakeMove(move);
 
             if (singularScore < singularBeta) {
                 extension++; // Extend this move by 1 ply
+                singularExtended = true;
             }
         }
 
@@ -762,7 +763,7 @@ int negamax(Board& board, int depth, int alpha, int beta, int ply, std::vector<u
             int reduction = 0;
             std::vector<Move> nullWindowPv;
             if (params.use_lmr &&
-                depth > 1 && is_quiet(move) && !moves_equal(move, singularMove)) {
+                depth > 1 && is_quiet(move) && !singularExtended) {
                 int lmrTableDepth = std::min(depth, 255);
                 int lmrTableMovesSearched = std::min(movesSearched, 255);
                 reduction = LMR_TABLE[lmrTableDepth][lmrTableMovesSearched]; // Increase reduction with depth
