@@ -21,7 +21,7 @@ float LMR_BASE = 0.77f;
 float LMR_DIVISION = 2.32f;
 
 // Singular Extensions
-int SE_DEPTH = 5;
+int SE_DEPTH = 7;
 int SE_SUBTRACTOR = 3;
 
 
