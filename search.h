@@ -26,6 +26,12 @@ struct SearchParams {
 	int aspiration_delta = 50;    // Initial aspiration half-window in centipawns
 };
 
+struct SearchStack {
+	int cutoffCount;
+	int staticEval;
+	Move singularMove; 
+}; // Not used now 
+
 const SearchParams& get_search_params();
 void set_search_params(const SearchParams& params);
 
