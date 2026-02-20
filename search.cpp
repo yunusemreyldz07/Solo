@@ -170,7 +170,7 @@ void search_moves_for_one_depth(
         board.makeMove(move);
 
         std::vector<Move> childPv;
-        uint64_t newHash = position_key(board);
+        uint64_t newHash = board.hash;
         localPositionHistory.push_back(newHash);
         int val = -negamax(board, depth - 1, -beta, -alpha, ply + 1, localPositionHistory, childPv);
         localPositionHistory.pop_back();
@@ -580,7 +580,7 @@ int negamax(Board& board, int depth, int alpha, int beta, int ply, std::vector<u
         return 0; // Draw
     }
 
-    uint64_t currentHash = position_key(board);
+    uint64_t currentHash = board.hash;
     int ttScore = 0;
     int ttDepth = 0;
     TTFlag ttFlag = TTFlag::EXACT;
@@ -650,13 +650,18 @@ int negamax(Board& board, int depth, int alpha, int beta, int ply, std::vector<u
 
         if (!inCheck && depth >= 3 && (beta - alpha == 1)) {
             // Make a "null move" by flipping side to move
+            const Zobrist& z = zobrist();
             const int prevEnPassant = board.enPassant;
+            const int prevEpFile = (board.enPassant >= 0 && board.enPassant < 64) ? (board.enPassant % 8) : 8;
 
-            board.enPassant = -1; // En passant rights vanish after a null move.
+            // Null move: side changes, en-passant rights vanish.
+            board.hash ^= z.side;
+            board.hash ^= z.epFile[prevEpFile];
+            board.enPassant = -1;
+            board.hash ^= z.epFile[8];
             board.stm ^= 1;
 
-            // Push new position key to positionHistory so threefold repetition checks remain correct
-            uint64_t nullHash = position_key(board);
+            uint64_t nullHash = board.hash;
             positionHistory.push_back(nullHash);
 
             // Reduction factor R (typical values 2..3). Ensure we don't search negative depth
@@ -667,7 +672,11 @@ int negamax(Board& board, int depth, int alpha, int beta, int ply, std::vector<u
             // Undo positionHistory change and null move
             if (!positionHistory.empty()) positionHistory.pop_back();
             board.stm ^= 1;
+            board.hash ^= z.side;
+            board.hash ^= z.epFile[8];
             board.enPassant = prevEnPassant;
+            const int restoreEpFile = (board.enPassant >= 0 && board.enPassant < 64) ? (board.enPassant % 8) : 8;
+            board.hash ^= z.epFile[restoreEpFile];
 
             if (nullScore >= beta) {
                 pvLine.clear();
@@ -726,7 +735,7 @@ int negamax(Board& board, int depth, int alpha, int beta, int ply, std::vector<u
         board.makeMove(move);
         movesSearched++;
         std::vector<Move> childPv;
-        uint64_t newHash = position_key(board);
+        uint64_t newHash = board.hash;
         positionHistory.push_back(newHash);
         if (firstMove){
             eval = -negamax(board, depth - 1, -beta, -alpha, ply + 1, positionHistory, childPv);

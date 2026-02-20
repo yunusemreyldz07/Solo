@@ -83,7 +83,7 @@ void bench() {
         board.loadFEN(fens[i]);
         std::vector<uint64_t> positionHistory;
         positionHistory.reserve(64);
-        positionHistory.push_back(position_key(board));
+        positionHistory.push_back(board.hash);
 
         resetNodeCounter();
         auto startTime = std::chrono::steady_clock::now();
@@ -265,7 +265,7 @@ int handle_uci_commands(int argc, char* argv[]){
             globalTT.clear();
             board.reset();
             gameHistory.clear();
-            gameHistory.push_back(position_key(board));
+            gameHistory.push_back(board.hash);
             clear_search_heuristics();
         }
 
@@ -286,7 +286,7 @@ int handle_uci_commands(int argc, char* argv[]){
                 board.loadFEN(fenStr);
             }
             gameHistory.clear();
-            gameHistory.push_back(position_key(board));
+            gameHistory.push_back(board.hash);
             
             size_t movesPos = line.find("moves");
             if (movesPos != std::string::npos) {
@@ -298,7 +298,7 @@ int handle_uci_commands(int argc, char* argv[]){
                 while (ss >> moveToken) {
                     Move m = uci_to_move(moveToken);
                     board.makeMove(m);
-                    gameHistory.push_back(position_key(board));
+                    gameHistory.push_back(board.hash);
                 }
             }
         }

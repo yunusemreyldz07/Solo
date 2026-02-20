@@ -123,6 +123,9 @@ void Board::reset() {
     stm = WHITE;
     halfMoveClock = 0;
     undoStack.clear();
+    if (undoStack.capacity() < (MAX_PLY + 32)) {
+        undoStack.reserve(MAX_PLY + 32);
+    }
     hash = position_key(*this);
 }
 
@@ -194,10 +197,14 @@ void Board::loadFEN(const std::string& fen) {
 
     halfMoveClock = static_cast<int8_t>(std::clamp(halfmove, 0, 127));
     undoStack.clear();
+    if (undoStack.capacity() < (MAX_PLY + 32)) {
+        undoStack.reserve(MAX_PLY + 32);
+    }
     hash = position_key(*this);
 }
 
 void Board::makeMove(Move move) {
+    const Zobrist& z = zobrist();
     const int from = from_sq(move);
     const int to = to_sq(move);
     const int movingPiece = mailbox[from];
@@ -231,14 +238,22 @@ void Board::makeMove(Move move) {
     st.prevHalfMoveClock = halfMoveClock;
     st.prevHash = hash;
 
+    const int oldCastling = castling & 0xF;
+    const int oldEpFile = (enPassant >= 0 && enPassant < 64) ? (enPassant % 8) : 8;
+    hash ^= z.side;
+    hash ^= z.epFile[oldEpFile];
+    hash ^= z.castling[oldCastling];
+
     halfMoveClock = (piece_type(movingPiece) == PAWN || capturedPiece != EMPTY) ? 0 : static_cast<int8_t>(halfMoveClock + 1);
     enPassant = -1;
 
     bb_clear(*this, movingPiece, from);
+    hash ^= z.piece[piece_to_zobrist_index(movingPiece)][from];
     mailbox[from] = EMPTY;
 
     if (capturedPiece != EMPTY) {
         bb_clear(*this, capturedPiece, captureSq);
+        hash ^= z.piece[piece_to_zobrist_index(capturedPiece)][captureSq];
         mailbox[captureSq] = EMPTY;
     }
 
@@ -248,6 +263,7 @@ void Board::makeMove(Move move) {
     }
 
     bb_set(*this, placedPiece, to);
+    hash ^= z.piece[piece_to_zobrist_index(placedPiece)][to];
     mailbox[to] = static_cast<int8_t>(placedPiece);
 
     if (castlingMove) {
@@ -266,6 +282,8 @@ void Board::makeMove(Move move) {
         const int rookPiece = make_piece(ROOK, movingColor);
         bb_clear(*this, rookPiece, rookFrom);
         bb_set(*this, rookPiece, rookTo);
+        hash ^= z.piece[piece_to_zobrist_index(rookPiece)][rookFrom];
+        hash ^= z.piece[piece_to_zobrist_index(rookPiece)][rookTo];
         mailbox[rookFrom] = EMPTY;
         mailbox[rookTo] = static_cast<int8_t>(rookPiece);
     }
@@ -284,12 +302,19 @@ void Board::makeMove(Move move) {
     }
 
     if (piece_type(movingPiece) == PAWN && std::abs(from - to) == 16) {
-        enPassant = static_cast<int8_t>((from + to) / 2);
+        const int epSq = (from + to) / 2;
+        const int opponentColor = other_color(movingColor);
+        if (is_pawn_attack_possible(*this, opponentColor, epSq)) {
+            enPassant = static_cast<int8_t>(epSq);
+        }
     }
 
     undoStack.push_back(st);
     stm ^= 1;
-    hash = position_key(*this);
+    const int newCastling = castling & 0xF;
+    const int newEpFile = (enPassant >= 0 && enPassant < 64) ? (enPassant % 8) : 8;
+    hash ^= z.castling[newCastling];
+    hash ^= z.epFile[newEpFile];
 }
 
 void Board::unmakeMove(Move /*move*/) {
