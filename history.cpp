@@ -4,6 +4,11 @@
 
 int historyTable[2][64][64]; // color x fromSquare x toSquare
 constexpr int HISTORY_MAX = 16384;
+int CORRHIST_WEIGHT_SCALE = 256;
+int CORRHIST_GRAIN = 256;
+int CORRHIST_SIZE = 16384;
+int CORRHIST_MAX = 16384;
+int pawnCorrectionHistory[2][16384];
 
 void clear_history() {
     std::memset(historyTable, 0, sizeof(historyTable));
@@ -33,4 +38,50 @@ void update_history(int color, int fromSq, int toSq, int depth, const Move badQu
 
 int get_history_score(int color, int fromSq, int toSq) {
     return historyTable[color][fromSq][toSq];
+}
+
+uint64_t generatePawnKey(Board *board) {
+    uint64_t finalKey = 0ULL;
+    uint64_t bitboard;
+
+    bitboard = board->piece[PAWN - 1] & board->color[WHITE];
+
+    while (bitboard) {
+        int sq = lsb(bitboard);
+        bitboard &= bitboard - 1;
+        finalKey ^= (1ULL << sq);
+    }
+
+    bitboard = board->piece[PAWN - 1] & board->color[BLACK];
+
+    while (bitboard) {
+        int sq = lsb(bitboard);
+        bitboard &= bitboard - 1;
+        finalKey ^= (1ULL << sq);
+    }
+
+    return finalKey;
+
+}
+
+int clamp(int d, int min, int max) {
+    const int t = d < min ? min : d;
+    return t > max ? max : t;
+}
+
+void updatePawnCorrectionHistory(Board *board, const int depth, const int diff) {
+    uint64_t pawnKey = generatePawnKey(board);
+    int entry = pawnCorrectionHistory[board->stm][pawnKey % CORRHIST_SIZE];
+    const int scaledDiff = diff * CORRHIST_GRAIN;
+    const int newWeight = std::min(depth + 1, 16);
+    entry = (entry * (CORRHIST_WEIGHT_SCALE - newWeight) + scaledDiff * newWeight) / CORRHIST_WEIGHT_SCALE;
+    entry = clamp(entry, -CORRHIST_MAX, CORRHIST_MAX);
+    pawnCorrectionHistory[board->stm][pawnKey % CORRHIST_SIZE] = entry;
+}
+
+int adjustEvalWithCorrectionHistory(Board *board, const int rawEval) {
+    uint64_t pawnKey = generatePawnKey(board);
+    int entry = pawnCorrectionHistory[board->stm][pawnKey % CORRHIST_SIZE];
+    int mateFound = MATE_SCORE - MAX_PLY; // Ensure we don't overflow mate scores
+    return clamp(rawEval + entry / CORRHIST_GRAIN, -mateFound + 1, mateFound - 1);
 }
