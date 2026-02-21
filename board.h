@@ -241,7 +241,7 @@ int see_exchange(const Board& board, const Move& move);
 int staticExchangeEvaluation(const Board& board, const Move& move, int threshold);
 // Utility functions
 void printBoard(const Board& board);
-Move uci_to_move(const std::string& uci);
+Move uci_to_move(const std::string& uci, const Board& board);
 
 // Zobrist hashing
 struct Zobrist {

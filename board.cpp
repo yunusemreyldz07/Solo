@@ -442,7 +442,7 @@ void printBoard(const Board& board) {
     std::cout << "    a b c d e f g h" << std::endl;
 }
 
-Move uci_to_move(const std::string& uci) {
+Move uci_to_move(const std::string& uci, const Board& board) {
     int fromCol = uci[0] - 'a';
     int fromRow = 8 - (uci[1] - '0'); // '1' -> 7, '8' -> 0
     int fromSq = fromRow * 8 + fromCol;
@@ -451,16 +451,34 @@ Move uci_to_move(const std::string& uci) {
     int toRow = 8 - (uci[3] - '0');
     int toSq = toRow * 8 + toCol;
 
-    int flags = 0; 
+    int flags = 0;
+    int movingPiece = board.mailbox[fromSq];
+    int targetPiece = board.mailbox[toSq];
 
     if (uci.length() == 5) {
+        // Promotion — also check if it's a capture
         char promoChar = uci[4];
+        int promoBase = 0;
         switch (promoChar) {
-            case 'n': flags = 8; break;  // 1000 (Knight)
-            case 'b': flags = 9; break;  // 1001 (Bishop)
-            case 'r': flags = 10; break; // 1010 (Rook)
-            case 'q': flags = 11; break; // 1011 (Queen)
+            case 'n': promoBase = 8; break;  // FLAG_PROMO_KNIGHT
+            case 'b': promoBase = 9; break;  // FLAG_PROMO_BISHOP
+            case 'r': promoBase = 10; break; // FLAG_PROMO_ROOK
+            case 'q': promoBase = 11; break; // FLAG_PROMO_QUEEN
         }
+        flags = (targetPiece != 0) ? promoBase + 4 : promoBase;
+    } else if (piece_type(movingPiece) == KING && std::abs(fromCol - toCol) == 2) {
+        flags = (toCol > fromCol) ? FLAG_CASTLE_KING : FLAG_CASTLE_QUEEN;
+    } else if (piece_type(movingPiece) == PAWN) {
+        if (std::abs(fromRow - toRow) == 2) {
+            flags = FLAG_DOUBLE_PAWN;
+        } else if (fromCol != toCol && targetPiece == 0) {
+            // Diagonal pawn move to empty square = en passant
+            flags = FLAG_EN_PASSANT;
+        } else if (targetPiece != 0) {
+            flags = FLAG_CAPTURE;
+        }
+    } else if (targetPiece != 0) {
+        flags = FLAG_CAPTURE;
     }
 
     return (flags << 12) | (toSq << 6) | fromSq;

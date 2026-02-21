@@ -52,7 +52,7 @@ void bench() {
     };
 
     auto move_to_uci = [](const Move& m) {
-        if (sq_to_row(move_from(m)) == 0 && sq_to_col(move_from(m)) == 0 && sq_to_row(move_to(m)) == 0 && sq_to_col(move_to(m)) == 0 && get_promotion_type(m) == -1) return std::string("0000");
+        if (m == 0) return std::string("0000");
         std::string s;
         s += columns[sq_to_col(move_from(m))];
         s += static_cast<char>('0' + (8 - sq_to_row(move_from(m))));
@@ -282,7 +282,7 @@ int handle_uci_commands(int argc, char* argv[]){
                 std::string moveToken;
                 
                 while (ss >> moveToken) {
-                    Move m = uci_to_move(moveToken);
+                    Move m = uci_to_move(moveToken, board);
                     board.makeMove(m);
                     gameHistory.push_back(position_key(board));
                 }
@@ -344,7 +344,7 @@ int handle_uci_commands(int argc, char* argv[]){
                 Move best = getBestMove(board, depthLimit, timeToThink, gameHistory);
 
                 // If no legal move was found (mate/stalemate), output UCI null move.
-                if (sq_to_row(move_from(best)) == 0 && sq_to_col(move_from(best)) == 0 && sq_to_row(move_to(best)) == 0 && sq_to_col(move_to(best)) == 0 && get_promotion_type(best) == -1) {
+                if (best == 0) {
                     std::cout << "bestmove 0000" << std::endl;
                 } else {
                     std::cout << "bestmove "
