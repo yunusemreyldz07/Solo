@@ -683,7 +683,7 @@ int negamax(Board& board, int depth, int alpha, int beta, int ply, std::vector<u
     }
 
     std::vector<Move> possibleMoves = get_all_moves(board, board.stm == WHITE);
-    Move bestMove = possibleMoves.empty() ? Move() : possibleMoves[0];
+    Move bestMove = 0;
 
     if (possibleMoves.empty()) {
         int kingRow = 0;
@@ -811,7 +811,7 @@ int negamax(Board& board, int depth, int alpha, int beta, int ply, std::vector<u
         globalTT.store(currentHash, maxEval, depth, flag, bestMove);
     }
 
-    if (!inCheck && !is_capture(bestMove) && !(flag == ALPHA && maxEval >= staticEval) && !(flag == BETA && maxEval <= staticEval)) {
+    if (!inCheck && (!is_capture(bestMove) || bestMove == 0) && !(flag == ALPHA && maxEval >= staticEval) && !(flag == BETA && maxEval <= staticEval)) {
         updatePawnCorrectionHistory(&board, depth, maxEval - staticEval);
     } 
 
