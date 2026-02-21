@@ -802,6 +802,10 @@ int negamax(Board& board, int depth, int alpha, int beta, int ply, std::vector<u
         }
     }
 
+    if (maxEval == VALUE_NONE){
+        maxEval = alphaOrig;
+    }
+
     TTFlag flag;
     if (maxEval <= alphaOrig) flag = ALPHA;
     else if (maxEval >= beta) flag = BETA;
@@ -811,9 +815,9 @@ int negamax(Board& board, int depth, int alpha, int beta, int ply, std::vector<u
         globalTT.store(currentHash, maxEval, depth, flag, bestMove);
     }
 
-    if (!inCheck && (!is_capture(bestMove) || bestMove == 0) && !(flag == ALPHA && maxEval >= staticEval) && !(flag == BETA && maxEval <= staticEval)) {
+    if (!inCheck && (!is_capture(bestMove) || bestMove == 0) && !(flag == ALPHA && maxEval >= staticEval) && !(flag == BETA && maxEval <= staticEval) && std::abs(maxEval) < MATE_SCORE - 100) {
         updatePawnCorrectionHistory(&board, depth, maxEval - staticEval);
-    } 
+    }
 
     return maxEval;
 }
