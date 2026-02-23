@@ -1,3 +1,4 @@
+#include "uci.h"
 #include "board.h"
 #include "bitboard.h"
 #include "search.h"
@@ -23,8 +24,27 @@ struct SearchLimit {
     int depthLimit = -1;
 };
 
+std::string move_to_uci(const Move m) {
+        if (m == 0) return std::string("0000");
+        std::string s;
+        s += columns[sq_to_col(move_from(m))];
+        s += static_cast<char>('0' + (8 - sq_to_row(move_from(m))));
+        s += columns[sq_to_col(move_to(m))];
+        s += static_cast<char>('0' + (8 - sq_to_row(move_to(m))));
+        if (get_promotion_type(m) != -1) {
+            switch (get_promotion_type(m)) {
+                case QUEEN: s += 'q'; break;
+                case ROOK: s += 'r'; break;
+                case BISHOP: s += 'b'; break;
+                case KNIGHT: s += 'n'; break;
+                default: break;
+            }
+        }
+        return s;
+    };
+
 void bench() {
-    const int benchDepth = 8;
+    const int benchDepth = 5;
     
     // Diverse set of positions covering opening, middlegame, endgame, and tactical themes
     const std::vector<std::string> fens = {
@@ -51,25 +71,6 @@ void bench() {
         "r1bq1rk1/pp2ppbp/2np1np1/8/3NP3/2N1B3/PPP1BPPP/R2Q1RK1 w - - 0 9",
     };
 
-    auto move_to_uci = [](const Move& m) {
-        if (m == 0) return std::string("0000");
-        std::string s;
-        s += columns[sq_to_col(move_from(m))];
-        s += static_cast<char>('0' + (8 - sq_to_row(move_from(m))));
-        s += columns[sq_to_col(move_to(m))];
-        s += static_cast<char>('0' + (8 - sq_to_row(move_to(m))));
-        if (get_promotion_type(m) != -1) {
-            switch (get_promotion_type(m)) {
-                case QUEEN: s += 'q'; break;
-                case ROOK: s += 'r'; break;
-                case BISHOP: s += 'b'; break;
-                case KNIGHT: s += 'n'; break;
-                default: break;
-            }
-        }
-        return s;
-    };
-
     uint64_t totalNodes = 0;
     long long totalTimeMs = 0;
 
@@ -83,12 +84,13 @@ void bench() {
         positionHistory.reserve(64);
         positionHistory.push_back(position_key(board));
 
+        resetNodeCounter();
         auto startTime = std::chrono::steady_clock::now();
         Move best = getBestMove(board, benchDepth);
         auto endTime = std::chrono::steady_clock::now();
 
         long long elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-        long long nodes = 0;
+        long long nodes = getNodeCounter();
 
         totalNodes += static_cast<uint64_t>(nodes);
         totalTimeMs += elapsed;
@@ -306,9 +308,26 @@ int handle_uci_commands(int argc, char* argv[]){
                 }
             }
 
-            // Simplified search mode: ignore time controls and always use a bounded depth
-            // unless GUI explicitly sends `go depth N`.
-            if (limits.depthLimit == -1) {
+            // if time is not specified then use time controls if available, otherwise default to depth 8
+            if (limits.timeToThink != -1) {
+                limits.depthLimit = 128;
+            } else if (params.wtime != -1 || params.btime != -1) { // if time controls are given, calculate time to think
+                const int myTime = board.stm == WHITE ? params.wtime : params.btime;
+                const int myInc = board.stm == WHITE ? params.winc : params.binc;
+            
+                // Time calculation
+
+                if (myTime > 0) {
+                    limits.timeToThink = (myTime / 20) + (myInc / 2);
+                    if (limits.timeToThink >= myTime) {
+                        limits.timeToThink = myTime - 50;
+                    }
+                } else {
+                    limits.timeToThink = 10;
+                }
+                if (limits.timeToThink < 10) limits.timeToThink = 10;
+                limits.depthLimit = 128;
+            } else if (limits.depthLimit == -1) {
                 limits.depthLimit = 8;
             }
 
@@ -317,8 +336,8 @@ int handle_uci_commands(int argc, char* argv[]){
 
             
             // Get the best move within the specified limits and current position history for repetition detection.
-            searchThread = std::thread([&board, depthLimit = limits.depthLimit, &searchRunning]() {
-                Move best = getBestMove(board, depthLimit);
+            searchThread = std::thread([&board, &gameHistory, depthLimit = limits.depthLimit, timeToThink = limits.timeToThink, &searchRunning]() {
+                Move best = getBestMove(board, depthLimit, timeToThink, gameHistory);
 
                 // If no legal move was found (mate/stalemate), output UCI null move.
                 if (best == 0) {

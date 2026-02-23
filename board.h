@@ -46,9 +46,8 @@ inline constexpr int KING   = 6;
 
 // Search constants
 inline constexpr int MAX_PLY = 128;
-inline constexpr int MATE_SCORE = 100000;
-inline constexpr int VALUE_INF = 2000000000;   // Infinite score for alpha-beta bounds
-inline constexpr int VALUE_NONE = -200000;     // Initial value before any move is searched
+inline constexpr int16_t MATE_SCORE = 30000; // Score for checkmate positions, used in evaluation and search
+inline constexpr int16_t VALUE_INF = 32000;   // Infinite score for alpha-beta bounds
 
 // Move ordering scores
 inline constexpr int SCORE_TT_MOVE      = 1000000;
