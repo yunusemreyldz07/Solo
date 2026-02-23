@@ -30,11 +30,12 @@ inline long long now_ms() {
 inline bool should_stop_search() {
     if (stop_search.load(std::memory_order_relaxed)) return true;
     if (!time_limited.load(std::memory_order_relaxed)) return false;
-
-    long long elapsed = now_ms() - start_time_ms.load(std::memory_order_relaxed);
-    if (elapsed >= time_limit_ms.load(std::memory_order_relaxed)) {
-        stop_search.store(true, std::memory_order_relaxed);
-        return true;
+    if ((nodeCount.load(std::memory_order_relaxed) & 2047) == 0) {
+        long long elapsed = now_ms() - start_time_ms.load(std::memory_order_relaxed);
+        if (elapsed >= time_limit_ms.load(std::memory_order_relaxed)) {
+            stop_search.store(true, std::memory_order_relaxed);
+            return true;
+        }
     }
     return false;
 }
