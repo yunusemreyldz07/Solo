@@ -206,10 +206,10 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, s
     }
 
     TTFlag flag = TT_EXACT;
-    if (bestEval <= originalAlpha) {
-        flag = TT_ALPHA;
-    } else if (bestEval >= beta) {
+    if (alpha <= originalAlpha) {
         flag = TT_BETA;
+    } else if (alpha >= beta) {
+        flag = TT_ALPHA;
     }
 
     ttTable.writeEntry(hashKey, bestEval, static_cast<int8_t>(depth), flag, bestMove);
