@@ -268,7 +268,7 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
         
         int16_t alpha = -VALUE_INF;
         int16_t beta = VALUE_INF;
-        int delta = 50;
+        int delta = 9;
         const bool useAspiration = (iterativeDepth >= 4);
         std::vector<Move> pvLine;
         if (useAspiration) {
@@ -291,13 +291,13 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
             }
 
             if (searchScore <= alpha) {
-                delta = std::min(4096, delta + (delta / 4));
+                delta = std::min<uint16_t>(4096, delta + (delta * 1.8));
                 alpha = std::max<int16_t>(-VALUE_INF, static_cast<int16_t>(searchScore - delta));
                 continue;
             }
 
             if (searchScore >= beta) {
-                delta = std::min(4096, delta + (delta / 4));
+                delta = std::min<uint16_t>(4096, delta + (delta * 1.8));
                 beta = std::min<int16_t>(VALUE_INF, static_cast<int16_t>(searchScore + delta));
                 continue;
             }
