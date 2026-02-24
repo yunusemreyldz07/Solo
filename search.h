@@ -7,7 +7,7 @@ extern void initLMRtables();
 void resetNodeCounter();
 long long getNodeCounter();
 
-int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply);
+int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, std::vector<Move>& pvLine);
 
 Move getBestMove(Board& board, int maxDepth, int movetimeMs = -1, const std::vector<uint64_t>& positionHistory = {}, int ply = 0);
 
@@ -60,13 +60,18 @@ public:
 
     void writeEntry(uint64_t hashKey, int16_t score, int8_t depth, TTFlag flag, Move bestMove) {
         TTEntry& entry = getEntry(hashKey);
-        // Only overwrite if the new entry is deeper or if it's an exact score at the same depth (to preserve PV moves)
-        if (entry.hashKey != hashKey || depth > entry.depth || (depth == entry.depth && flag == TT_EXACT)) {
+        
+        bool isNewPosition = (entry.hashKey != hashKey);
+
+        if (isNewPosition || depth > entry.depth || (depth == entry.depth && flag == TT_EXACT)) {
             entry.hashKey = hashKey;
             entry.score = score;
             entry.depth = depth;
             entry.flag = flag;
-            entry.bestMove = bestMove;
+            
+            if (bestMove != 0 || isNewPosition) {
+                entry.bestMove = bestMove;
+            }
         }
     }
 };

@@ -142,7 +142,6 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, s
     if (ttEntry.hashKey == hashKey) {
         ttMove = ttEntry.bestMove;
         ttHit = true;
-        
         if (ttEntry.depth >= depth && ply > 0) {
             int16_t ttScore = ttEntry.score;
             if (ttEntry.flag == TT_EXACT) {
@@ -204,21 +203,19 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, s
         if (alpha >= beta) {
             break; // Beta cutoff
         }
-        TTFlag flag = TT_EXACT;
-        if (bestEval <= originalAlpha) {
-            flag = TT_ALPHA; // (Fail-Low)
-        } else if (bestEval >= beta) {
-            flag = TT_BETA;  // (Fail-High)
-        }
-        ttTable.writeEntry(hashKey, bestEval, static_cast<int8_t>(depth), flag, chosenMove);
     }
 
-    return bestEval;
-}
+    TTFlag flag = TT_EXACT;
+    if (bestEval <= originalAlpha) {
+        flag = TT_ALPHA;
+    } else if (bestEval >= beta) {
+        flag = TT_BETA;
+    }
 
-int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply) {
-    std::vector<Move> unusedPv;
-    return negamax(board, depth, alpha, beta, ply, unusedPv);
+    ttTable.writeEntry(hashKey, bestEval, static_cast<int8_t>(depth), flag, bestMove);
+
+
+    return bestEval;
 }
 
 Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<uint64_t>& positionHistory, int ply) {
