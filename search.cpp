@@ -138,6 +138,9 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, s
         return qsearch(board, alpha, beta, ply);
     }
 
+    Move badQuiets[MAX_MOVES];
+    int badQuietCount = 0;
+
     int16_t originalAlpha = alpha;
     uint64_t hashKey = board.hash; 
     TTEntry& ttEntry = ttTable.getEntry(hashKey);
@@ -205,8 +208,10 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, s
         }
 
         if (alpha >= beta) {
-            update_history(board.stm, move_from(chosenMove), move_to(chosenMove), depth, 0, 0); // No bad quiet moves to update
+            update_history(board.stm, move_from(chosenMove), move_to(chosenMove), depth, badQuiets, badQuietCount);
             break; // Beta cutoff
+        } else {
+            badQuiets[badQuietCount++] = chosenMove;
         }
     }
 
