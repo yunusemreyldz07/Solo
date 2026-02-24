@@ -243,7 +243,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, s
 
 Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<uint64_t>& positionHistory, int ply) {
     (void)positionHistory;
-
+    int16_t score = 0;
     stop_search.store(false, std::memory_order_relaxed);
     if (movetimeMs > 0) {
         int safeTime = movetimeMs;
@@ -260,19 +260,52 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
     Move moves[MAX_MOVES];
     get_all_moves(board, moves, moveCount);
     if (moveCount == 0) return 0;
-
     Move bestMoveSoFar = moves[0];
 
     // Iterative Deepening
     for(int iterativeDepth = 1; iterativeDepth <= maxDepth; ++iterativeDepth) {
         if (should_stop_search()) break;
         
-        int alpha = -VALUE_INF;
-        int beta = VALUE_INF;
+        int16_t alpha = -VALUE_INF;
+        int16_t beta = VALUE_INF;
+        int delta = 50;
+        const bool useAspiration = (iterativeDepth >= 4);
         std::vector<Move> pvLine;
+        if (useAspiration) {
+            alpha = std::max<int16_t>(alpha, static_cast<int16_t>(score - delta));
+            beta = std::min<int16_t>(beta, static_cast<int16_t>(score + delta));
+        }
 
-        int16_t score = negamax(board, iterativeDepth, alpha, beta, ply, pvLine);
-        
+        while (true) {
+            pvLine.clear();
+            int16_t searchScore = negamax(board, iterativeDepth, alpha, beta, ply, pvLine);
+
+            if (should_stop_search()) {
+                score = searchScore;
+                break;
+            }
+
+            if (!useAspiration) {
+                score = searchScore;
+                break;
+            }
+
+            if (searchScore <= alpha) {
+                delta = std::min(4096, delta * 2);
+                alpha = std::max<int16_t>(-VALUE_INF, static_cast<int16_t>(searchScore - delta));
+                continue;
+            }
+
+            if (searchScore >= beta) {
+                delta = std::min(4096, delta * 2);
+                beta = std::min<int16_t>(VALUE_INF, static_cast<int16_t>(searchScore + delta));
+                continue;
+            }
+
+            score = searchScore;
+            break;
+        }
+
         if (should_stop_search()) {
             break;
         }
