@@ -269,6 +269,12 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, s
 
 
             eval = -negamax(board, lmrDepth, -alpha - 1, -alpha, ply + 1, childPv); // PVS null window search
+            
+            if (reduction > 0 && eval > alpha) {
+                // if the eval suggest a better move we research
+                childPv.clear();
+                eval = -negamax(board, depth - 1, -alpha - 1, -alpha, ply + 1, childPv); // Re-search with no reduction
+            }
             if (eval > alpha && eval < beta) {
                 // if we fail high search again with no reduction, and window
                 childPv.clear();
