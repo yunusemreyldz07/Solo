@@ -333,7 +333,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, s
     }
 
     if (aborted) {
-        return bestEval; // Don't write to TT if search was aborted
+        return bestEval; // Don't write to TT if search was aborted.
     }
 
     TTFlag flag = TT_EXACT;
