@@ -23,6 +23,7 @@ std::atomic<long long> hard_time_limit_ms{0};
 std::atomic<bool> time_limited{false};
 
 const int PIECE_VALUES[7] = {0, 100, 320, 330, 500, 900, 20000};
+constexpr int TIME_CHECK_MASK = 511; // Poll every 512 nodes.
 
 inline long long now_ms() {
     auto now = std::chrono::steady_clock::now();
@@ -32,7 +33,7 @@ inline long long now_ms() {
 inline bool should_stop_search() {
     if (stop_search.load(std::memory_order_relaxed)) return true;
     if (!time_limited.load(std::memory_order_relaxed)) return false;
-    if ((nodeCount.load(std::memory_order_relaxed) & 2047) == 0) {
+    if ((nodeCount.load(std::memory_order_relaxed) & TIME_CHECK_MASK) == 0) {
         long long elapsed = now_ms() - start_time_ms.load(std::memory_order_relaxed);
         if (elapsed >= hard_time_limit_ms.load(std::memory_order_relaxed)) {
             stop_search.store(true, std::memory_order_relaxed);
@@ -40,6 +41,12 @@ inline bool should_stop_search() {
         }
     }
     return false;
+}
+
+inline bool soft_limit_reached() {
+    if (!time_limited.load(std::memory_order_relaxed)) return false;
+    long long elapsed = now_ms() - start_time_ms.load(std::memory_order_relaxed);
+    return elapsed >= soft_time_limit_ms.load(std::memory_order_relaxed);
 }
 
 void configure_time_limit(const int& timeToThink) {
@@ -114,7 +121,7 @@ void orderMoves(Board& board, Move* moves, int moveCount, Move ttMove = 0) {
 }
 
 int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply) {
-    if (stop_search.load(std::memory_order_relaxed)) return 0;
+    if (should_stop_search()) return 0;
     nodeCount.fetch_add(1, std::memory_order_relaxed);
     int stand_pat = evaluate_board(board);
 
@@ -133,6 +140,7 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply) {
     int bestEval = stand_pat;
 
     for (int i = 0; i < moveCount; ++i) {
+        if (should_stop_search()) return bestEval;
         Move captureMove = captureMoves[i];
         
         board.makeMove(captureMove);
@@ -258,6 +266,10 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, s
 
     for (int movesSearched = 0; movesSearched < moveCount; ++movesSearched) {
         if (should_stop_search()) {
+            aborted = true;
+            break;
+        }
+        if (ply == 0 && movesSearched > 0 && soft_limit_reached()) {
             aborted = true;
             break;
         }
@@ -425,12 +437,9 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
         }
         std::cout << std::endl;
 
-        if (time_limited.load(std::memory_order_relaxed)){
-            long long elapsed = now_ms() - start_time_ms.load(std::memory_order_relaxed);
-            if (elapsed >= soft_time_limit_ms.load(std::memory_order_relaxed)) {
+        if (soft_limit_reached()) {
                 stop_search.store(true, std::memory_order_relaxed);
                 break;
-            }
         }
     }
 
