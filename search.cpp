@@ -129,7 +129,9 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply) {
 
     for (int i = 0; i < moveCount; ++i) {
         Move captureMove = captureMoves[i];
-        
+        if (!staticExchangeEvaluation(board, captureMove, 0)) {
+            continue; // Bad capture, skip it
+        }
         board.makeMove(captureMove);
         
         int eval = -qsearch(board, -beta, -alpha, ply + 1);
