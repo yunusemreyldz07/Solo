@@ -126,15 +126,10 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply) {
     get_capture_moves(board, captureMoves, moveCount);
     orderMoves(board, captureMoves, moveCount, 0);
     int bestEval = stand_pat;
-    bool inCheck = false;
-    int kingSq = 0;
-    king_square(board, board.stm == WHITE, kingSq);
-    if (kingSq != -1 && is_square_attacked(board, kingSq, board.stm != WHITE)) {
-        inCheck = true;
-    }
+
     for (int i = 0; i < moveCount; ++i) {
         Move captureMove = captureMoves[i];
-        if (!staticExchangeEvaluation(board, captureMove, 0) && !inCheck) {
+        if (!staticExchangeEvaluation(board, captureMove, 0)) {
             continue; // Bad capture, skip it
         }
         board.makeMove(captureMove);
