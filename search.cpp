@@ -74,7 +74,7 @@ long long getNodeCounter() {
     return nodeCount.load(std::memory_order_relaxed);
 }
 
-int scoreMove(Board& board, const Move& move, Move ttMove = 0) {
+int scoreMove(Board& board, const Move& move, int ply, const Move ttMove = 0) {
     int score = 0;
     int from = move_from(move);
     int to = move_to(move);
@@ -97,14 +97,17 @@ int scoreMove(Board& board, const Move& move, Move ttMove = 0) {
 
     if (is_quiet(move)) {
         score += get_history_score(board.stm, from, to);
+        if (is_killer_move(ply, move)) {
+            score += SCORE_KILLER_MOVE;
+        }
     }
 
     return score;
 }
 
-void orderMoves(Board& board, Move* moves, int moveCount, Move ttMove = 0) {
+void orderMoves(Board& board, Move* moves, int moveCount, int ply, const Move ttMove = 0) {
     std::sort(moves, moves + moveCount, [&](const Move& a, const Move& b) {
-        return scoreMove(board, a, ttMove) > scoreMove(board, b, ttMove);
+        return scoreMove(board, a, ply, ttMove) > scoreMove(board, b, ply, ttMove);
     });
 }
 
@@ -124,7 +127,7 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply) {
     Move captureMoves[MAX_MOVES];
     int moveCount = 0;
     get_capture_moves(board, captureMoves, moveCount);
-    orderMoves(board, captureMoves, moveCount, 0);
+    orderMoves(board, captureMoves, moveCount, ply, 0);
     int bestEval = stand_pat;
 
     for (int i = 0; i < moveCount; ++i) {
@@ -204,6 +207,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, s
         }
     }
 
+    // Internal Iterative Reduction (IIR)
     if ((!ttHit || ttMove == 0 || ttEntry.depth < depth - 3) && depth >= 5) {
         depth--;
     }
@@ -225,7 +229,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, s
     int16_t bestEval = -VALUE_INF;
     bool aborted = false;
     
-    orderMoves(board, moves, moveCount, ttMove);
+    orderMoves(board, moves, moveCount, ply, ttMove);
     Move bestMove = 0;
 
     // Reverse Futility Pruning
@@ -363,6 +367,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, s
         if (alpha >= beta) {
             if (is_quiet(chosenMove)){
                 update_history(board.stm, move_from(chosenMove), move_to(chosenMove), depth, badQuiets, badQuietCount);
+                add_killer_move(ply, chosenMove);
             }
             break; // Beta cutoff
         }

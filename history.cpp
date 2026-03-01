@@ -3,6 +3,8 @@
 #include <algorithm>
 
 int historyTable[2][64][64]; // color x fromSquare x toSquare
+Move killerMoves[MAX_PLY][2]; // Two killer moves per ply
+
 constexpr int HISTORY_MAX = 16384;
 
 void clear_history() {
@@ -33,4 +35,19 @@ void update_history(int color, int fromSq, int toSq, int depth, const Move badQu
 
 int get_history_score(int color, int fromSq, int toSq) {
     return historyTable[color][fromSq][toSq];
+}
+
+void add_killer_move(int ply, Move move) {
+    if (killerMoves[ply][0] != move) {
+        killerMoves[ply][1] = killerMoves[ply][0];
+        killerMoves[ply][0] = move;
+    }
+}
+
+bool is_killer_move(int ply, Move move) {
+    return killerMoves[ply][0] == move || killerMoves[ply][1] == move;
+}
+
+void clear_killer_moves() {
+    std::memset(killerMoves, 0, sizeof(killerMoves));
 }

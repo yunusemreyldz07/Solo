@@ -6,6 +6,12 @@
 // History table: [color][fromSquare][toSquare]
 // Each square is from 0-63, total 64x64 = 4096 entries
 extern int historyTable[2][64][64];
+extern Move killerMoves[MAX_PLY][2];
+
+// Killer functions
+void add_killer_move(int ply, Move move);
+bool is_killer_move(int ply, Move move);
+void clear_killer_moves();
 
 // History functions
 void clear_history();                          // Reset history table
