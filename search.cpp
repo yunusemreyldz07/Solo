@@ -153,11 +153,20 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply) {
     int bestEval = stand_pat;
     Move bestMove = 0;
 
+    int futilityValue = stand_pat + 100;
+
     for (int i = 0; i < moveCount; ++i) {
         Move captureMove = captureMoves[i];
+
         if (!staticExchangeEvaluation(board, captureMove, 0)) {
             continue; // Bad capture, skip it
         }
+
+        if (futilityValue <= alpha && !staticExchangeEvaluation(board, captureMove, 100)) {
+            bestEval = std::max(bestEval, futilityValue);
+            continue;
+        }
+
         board.makeMove(captureMove);
         
         int eval = -qsearch(board, -beta, -alpha, ply + 1);
