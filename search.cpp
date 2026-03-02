@@ -278,6 +278,13 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, s
         }
     }
 
+    if (!pvNode && !inCheck && depth <= 5 && staticEval + 200 * depth < alpha) {
+        int razoring_score = qsearch(board, alpha, beta, ply);
+        if (razoring_score <= alpha) {            
+            return razoring_score; // Razor cutoff
+        }
+    }
+
     Move badQuiets[MAX_MOVES];
     int badQuietCount = 0;
     for (int movesSearched = 0; movesSearched < moveCount; ++movesSearched) {
