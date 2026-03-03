@@ -5,8 +5,20 @@
 int historyTable[2][64][64]; // color x fromSquare x toSquare
 constexpr int HISTORY_MAX = 16384;
 
+int continuationHistoryTable[7][64][7][64];
+
+void updateContinuationHistory(int oldPiece, int oldToSq, int toPiece, int toSq, int bonus) {
+    int& entry = continuationHistoryTable[oldPiece][oldToSq][toPiece][toSq];
+    entry += bonus - (entry * std::abs(bonus)) / HISTORY_MAX;
+}
+
+int getContinuationHistoryScore(int oldPiece, int oldToSq, int toPiece, int toSq) {
+    return continuationHistoryTable[oldPiece][oldToSq][toPiece][toSq];
+}
+
 void clear_history() {
     std::memset(historyTable, 0, sizeof(historyTable));
+    std::memset(continuationHistoryTable, 0, sizeof(continuationHistoryTable));
 }
 
 void update_history(int color, int fromSq, int toSq, int depth, const Move badQuiets[256], const int& badQuietCount) { 
