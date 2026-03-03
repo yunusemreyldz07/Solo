@@ -2,7 +2,7 @@
 #include <cstring>
 #include <algorithm>
 
-int historyTable[2][64][64]; // color x fromSquare x toSquare
+int historyTable[2][64][64]; // color x fromSquare x toSquare = 8192 entries
 constexpr int HISTORY_MAX = 16384;
 
 void clear_history() {
