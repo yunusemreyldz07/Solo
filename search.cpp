@@ -406,9 +406,17 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, s
                 Move oldMove = board.moveHistory.empty() ? 0 : board.moveHistory.back();
                 update_history(board.stm, move_from(chosenMove), move_to(chosenMove), depth, badQuiets, badQuietCount);
                 if (oldMove != 0) {
+                    int bonus = std::min(10 + 200 * depth, 4096);
                     int oldPiece = piece_type(board.mailbox[move_to(oldMove)]);
+                    int oldToSq = move_to(oldMove);
                     int curPiece = piece_type(board.mailbox[move_from(chosenMove)]);
-                    updateContinuationHistory(oldPiece, move_to(oldMove), curPiece, move_to(chosenMove), depth);
+                    updateContinuationHistory(oldPiece, oldToSq, curPiece, move_to(chosenMove), bonus);
+
+                    // Malus for bad quiets in continuation history
+                    for (int i = 0; i < badQuietCount; ++i) {
+                        int badPiece = piece_type(board.mailbox[move_from(badQuiets[i])]);
+                        updateContinuationHistory(oldPiece, oldToSq, badPiece, move_to(badQuiets[i]), -bonus);
+                    }
                 }
             }
             break; // Beta cutoff

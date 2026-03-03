@@ -7,11 +7,9 @@ constexpr int HISTORY_MAX = 16384;
 
 int continuationHistoryTable[12][64][12][64];
 
-void updateContinuationHistory(int oldPiece, int oldToSq, int toPiece, int toSq, int depth) {
-    int bonus = std::min(10 + 200 * depth, 4096);
-    int& bestScore = continuationHistoryTable[oldPiece][oldToSq][toPiece][toSq];
-
-    bestScore += bonus - (bestScore * std::abs(bonus)) / HISTORY_MAX;
+void updateContinuationHistory(int oldPiece, int oldToSq, int toPiece, int toSq, int bonus) {
+    int& entry = continuationHistoryTable[oldPiece][oldToSq][toPiece][toSq];
+    entry += bonus - (entry * std::abs(bonus)) / HISTORY_MAX;
 }
 
 int getContinuationHistoryScore(int oldPiece, int oldToSq, int toPiece, int toSq) {
