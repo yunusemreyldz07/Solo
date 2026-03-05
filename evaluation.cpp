@@ -340,17 +340,108 @@ ensure_tables_init();
 
 int evaluate_board(const Board& board) {
     int raw_eval = raw_evaluate_board(board);
-    int eval = raw_eval;
-
-    // raw_eval is side-to-move relative; align material sign to side-to-move too.
-    int mat_stm = material_count(board);
-    if (board.stm == BLACK) mat_stm = -mat_stm;
-
-    if (raw_eval > 0 && mat_stm < 0) {
-        eval += 50;
-    } else if (raw_eval < 0 && mat_stm > 0) {
-        eval -= 50;
+    int totalMaterial = 0;
+    int materialBalance = 0; // positive = white has more
+    const int pieceVal[6] = {100, 300, 300, 500, 900, 0}; // skip king
+    
+    for (int i = 0; i < 5; i++) { // skip king (index 5)
+        int wCount = popcount(board.piece[i] & board.color[WHITE]);
+        int bCount = popcount(board.piece[i] & board.color[BLACK]);
+        totalMaterial += (wCount + bCount) * pieceVal[i];
+        materialBalance += (wCount - bCount) * pieceVal[i];
     }
 
-    return eval;
+    // Make material balance side-to-move relative
+    int mat_stm = (board.stm == WHITE) ? materialBalance : -materialBalance;
+
+    if (totalMaterial >= 3000) {
+        // Are we in a position where we are down material but have a good position?
+        bool filter1 = (raw_eval > 0 && mat_stm < -100) || (raw_eval < 0 && mat_stm > 100);
+
+        // filter 2: Count our piece attacks near enemy king, and their attacks near our king
+        int ourKingSq, theirKingSq;
+        bool weAreWhite = (board.stm == WHITE);
+        king_square(board, weAreWhite, ourKingSq);
+        king_square(board, !weAreWhite, theirKingSq);
+
+        Bitboard occ = board.color[WHITE] | board.color[BLACK];
+
+        Bitboard enemyKingZone = king_attacks[theirKingSq] | (1ULL << theirKingSq);
+        Bitboard ourKingZone = king_attacks[ourKingSq] | (1ULL << ourKingSq);
+
+        int ourAttacks = 0;   // our pieces attacking enemy king zone
+        int theirAttacks = 0; // their pieces attacking our king zone
+
+        int us = weAreWhite ? WHITE : BLACK;
+        int them = weAreWhite ? BLACK : WHITE;
+
+        Bitboard knights = board.piece[KNIGHT - 1] & board.color[us];
+
+        while (knights) {
+            int sq = lsb(knights);
+            knights &= knights - 1;
+            ourAttacks += popcount(knight_attacks[sq] & enemyKingZone);
+        }
+
+        Bitboard bishops = board.piece[BISHOP - 1] & board.color[us];
+        while (bishops) {
+            int sq = lsb(bishops);
+            bishops &= bishops - 1;
+            ourAttacks += popcount(get_bishop_attacks(sq, occ) & enemyKingZone);
+        }
+
+        Bitboard rooks = board.piece[ROOK - 1] & board.color[us];
+        while (rooks) {
+            int sq = lsb(rooks);
+            rooks &= rooks - 1;
+            ourAttacks += popcount(get_rook_attacks(sq, occ) & enemyKingZone);
+        }
+
+        Bitboard queens = board.piece[QUEEN - 1] & board.color[us];
+        while (queens) {
+            int sq = lsb(queens);
+            queens &= queens - 1;
+            ourAttacks += popcount((get_bishop_attacks(sq, occ) | get_rook_attacks(sq, occ)) & enemyKingZone);
+        }
+
+        // Their attacks to our king zone
+        knights = board.piece[KNIGHT - 1] & board.color[them];
+        while (knights) {
+            int sq = lsb(knights);
+            knights &= knights - 1;
+            theirAttacks += popcount(knight_attacks[sq] & ourKingZone);
+        }
+        bishops = board.piece[BISHOP - 1] & board.color[them];
+        while (bishops) {
+            int sq = lsb(bishops);
+            bishops &= bishops - 1;
+            theirAttacks += popcount(get_bishop_attacks(sq, occ) & ourKingZone);
+        }
+        rooks = board.piece[ROOK - 1] & board.color[them];
+        while (rooks) {
+            int sq = lsb(rooks);
+            rooks &= rooks - 1;
+            theirAttacks += popcount(get_rook_attacks(sq, occ) & ourKingZone);
+        }
+        queens = board.piece[QUEEN - 1] & board.color[them];
+        while (queens) {
+            int sq = lsb(queens);
+            queens &= queens - 1;
+            theirAttacks += popcount((get_bishop_attacks(sq, occ) | get_rook_attacks(sq, occ)) & ourKingZone);
+        }
+
+        bool filter2 = (ourAttacks >= 4) || (theirAttacks >= 4);
+
+        // Both filters must pass
+        if (filter1 && filter2) {
+            if (raw_eval > 0) {
+                // We're on the good side of an aggressive position
+                raw_eval += 50;
+            } else {
+                // We're on the bad side 
+                raw_eval -= 50;
+            }
+        }
+    }
+    return raw_eval;
 }
