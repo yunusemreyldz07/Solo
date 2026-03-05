@@ -368,7 +368,8 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, s
     }
 
     // Null Move Pruning
-    if (!inCheck && depth >= 3 && !pvNode) {
+    bool hasNonPawnMaterial = (board.piece[KNIGHT-1] | board.piece[BISHOP-1] | board.piece[ROOK-1] | board.piece[QUEEN-1]) & board.color[board.stm];
+    if (!inCheck && depth >= 3 && !pvNode && hasNonPawnMaterial) {
         const int prevEnPassant = board.enPassant;
         const uint64_t prevHash = board.hash;
 
