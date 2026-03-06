@@ -219,6 +219,9 @@ void ensure_tables_init() {
 const int doublePawnPenaltyOpening = -5;
 const int doublePawnPenaltyEndgame = -10;
 
+const int kingSafetyOpening = 7;
+const int kingSafetyEndgame = 3;
+
 int evaluate_mobility(const Board& board, int pieceType, bool isWhite, Bitboard occupy) {
     Bitboard myPieces = isWhite ? board.color[WHITE] : board.color[BLACK];
     
@@ -304,6 +307,24 @@ int evaluate_board(const Board& board) {
         }
     }
 
+    int whiteKingSq = 0;
+    king_square(board, true, whiteKingSq);
+    
+    int blackKingSq = 0;
+    king_square(board, false, blackKingSq);
+
+    Bitboard whiteKingSafety = king_attacks[whiteKingSq] & board.color[WHITE];
+    Bitboard blackKingSafety = king_attacks[blackKingSq] & board.color[BLACK];
+
+    int whiteKingSafetyCount = popcount(whiteKingSafety);
+
+    int blackKingSafetyCount = popcount(blackKingSafety);
+
+    mg[WHITE] += kingSafetyOpening * whiteKingSafetyCount;
+    eg[WHITE] += kingSafetyEndgame * whiteKingSafetyCount;
+
+    mg[BLACK] += kingSafetyOpening * blackKingSafetyCount;
+    eg[BLACK] += kingSafetyEndgame * blackKingSafetyCount;
 
     /* tapered eval */
     int mgScore = mg[side2move] - mg[OTHER(side2move)];
