@@ -30,6 +30,8 @@ thread_local long long hard_time_limit_ms   = 0;
 thread_local long long soft_node_limit      = -1;
 thread_local bool      time_limited         = false;
 thread_local int       seldepth             = 0;
+thread_local Move      singularPvTable[MAX_PLY][MAX_PLY];
+thread_local int       singularPvLength[MAX_PLY];
 
 inline void updateSeldepth(int ply) {
     if (ply > seldepth) seldepth = ply;
@@ -468,7 +470,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
             const int singularDepth = (depth - 1) / 2;
         
             ss->singularMove = chosenMove;
-            int16_t s = negamax(board, singularDepth, singularBeta - 1, singularBeta, ply, ss, pvTable, pvLength, positionHistory);
+            int16_t s = negamax(board, singularDepth, singularBeta - 1, singularBeta, ply, ss, singularPvTable, singularPvLength, positionHistory);
             ss->singularMove = 0;
 
             if (s < singularBeta) {
