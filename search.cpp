@@ -314,6 +314,24 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         return 0; // DRAW
     }
 
+    int mate_value = MATE_SCORE - ply;
+
+    if (beta > mate_value) {
+        beta = mate_value;
+        if (alpha >= mate_value) {
+            return mate_value;
+            }
+    }
+
+    int mated_value = -MATE_SCORE + ply;    
+
+    if (alpha < mated_value) {
+        alpha = mated_value;
+        if (beta <= mated_value) {
+            return mated_value;
+        }
+    }
+
     bool firstMove = true; // for PVS
     int16_t eval = 0; 
 
