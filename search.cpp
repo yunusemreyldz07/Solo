@@ -5,6 +5,7 @@
 #include "board.h"
 #include "history.h"
 #include "nnue.h"
+#include "movepicker.h"
 
 #include <atomic>
 #include <iostream>
@@ -246,19 +247,19 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply, SearchStack*
         alpha = stand_pat;
     }
 
-    Move captureMoves[MAX_MOVES];
-    int moveCount = 0;
-    get_capture_moves(board, captureMoves, moveCount);
-    orderMoves(board, captureMoves, moveCount, ttHit ? ttEntry.bestMove : 0, 0);
+    MovePicker mp(board, ttHit ? ttEntry.bestMove : 0, 0, 0, 0, true);
     int bestEval = stand_pat;
     Move bestMove = 0;
+    Move captureMove;
 
-    for (int i = 0; i < moveCount; ++i) {
-        Move captureMove = captureMoves[i];
-        if (!staticExchangeEvaluation(board, captureMove, 0)) {
-            continue; // Bad capture, skip it
-        }
+    while ((captureMove = mp.next_move()) != 0) {
         board.makeMove(captureMove);
+        int kingSq = -1;
+        king_square(board, board.stm == BLACK, kingSq);
+        if (kingSq != -1 && is_square_attacked(board, kingSq, board.stm == WHITE)) {
+            board.unmakeMove(captureMove);
+            continue;
+        }
         
         int eval = -qsearch(board, -beta, -alpha, ply + 1, ss + 1);
         
@@ -367,24 +368,15 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
 
 
 
-    int moveCount = 0;
-    Move moves[MAX_MOVES];
-    get_all_moves(board, moves, moveCount);
+    MovePicker mp(board, ttMove, killerMoves[ply][0], killerMoves[ply][1], ply);
+    Move bestMove = 0;
 
-    if (moveCount == 0) {
-        int kingSq = -1;
-        king_square(board, board.stm == WHITE, kingSq);
-        if ((kingSq != -1) && is_square_attacked(board, kingSq, board.stm != WHITE)) {
+    if (!mp.has_moves()) {
+        if (inCheck) {
             return -MATE_SCORE + ply;
         }
         return 0; // Stalemate
     }
-
-    int16_t bestEval = -VALUE_INF;
-    bool aborted = false;
-    
-    orderMoves(board, moves, moveCount, ttMove, ply);
-    Move bestMove = 0;
 
     // Reverse Futility Pruning
     if (!rootNode && !ss->singularMove && !inCheck && !pvNode && depth < 9 && beta < MATE_SCORE - 100){
@@ -438,16 +430,24 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         }
     }
 
+    int16_t bestEval = -VALUE_INF;
+    bool aborted = false;
+    
     Move badQuiets[MAX_MOVES];
     int badQuietCount = 0;
     pvLength[ply] = ply;
-    for (int movesSearched = 0; movesSearched < moveCount; ++movesSearched) {
+
+    Move chosenMove;
+    int movesSearched = 0;
+
+    while ((chosenMove = mp.next_move()) != 0) {
 
         if (should_stop_search()) {
             aborted = true;
             break;
         }
-        Move chosenMove = moves[movesSearched];
+
+        const int moveIndex = movesSearched++;
 
         if (chosenMove == ss->singularMove) {
             continue;
@@ -497,18 +497,18 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         int lmpCount = (3 * depth * depth) + 4;
         // Late Move Pruning (LMP) logic (skip for killer moves)
         if (!rootNode && !pvNode && !isKiller &&
-            movesSearched >= lmpCount && is_quiet(chosenMove)) {
+            moveIndex >= lmpCount && is_quiet(chosenMove)) {
             continue; // skip this move (late move pruning)
         }
         
         // SEE PVS pruning (skip for killer moves)
         int seeThreshold = is_quiet(chosenMove) ? -67 * depth : -32 * depth * depth;
-        if (movesSearched > 0 && !isKiller && !staticExchangeEvaluation(board, chosenMove, seeThreshold)) {
+        if (moveIndex > 0 && !isKiller && !staticExchangeEvaluation(board, chosenMove, seeThreshold)) {
             continue;
         }
 
         // History Pruning
-        if (!rootNode && !pvNode && !inCheck && is_quiet(chosenMove) && movesSearched > 0 && depth <= 4) {
+        if (!rootNode && !pvNode && !inCheck && is_quiet(chosenMove) && moveIndex > 0 && depth <= 4) {
             int from = move_from(chosenMove);
             int to = move_to(chosenMove);
             int piece = board.mailbox[from] - 1;
@@ -521,6 +521,14 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         moveStack[ply] = {board.mailbox[move_from(chosenMove)] - 1, move_to(chosenMove)};
         board.makeMove(chosenMove);
 
+        // Legality check
+        int kSq = -1;
+        king_square(board, board.stm == BLACK, kSq);
+        if (kSq != -1 && is_square_attacked(board, kSq, board.stm == WHITE)) {
+            board.unmakeMove(chosenMove);
+            continue;
+        }
+
         positionHistory.push_back(board.hash); // Add new position to history for repetition detection
         const int fullDepth = depth - 1 + extension;
         if (firstMove){
@@ -532,7 +540,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
 
             if (depth > 1 && is_quiet(chosenMove)) {
                 int lmrTableDepth = std::min(depth, 255);
-                int lmrTableMovesSearched = std::min(movesSearched, 255);
+                int lmrTableMovesSearched = std::min(moveIndex, 255);
                 reduction = LMR_TABLE[lmrTableDepth][lmrTableMovesSearched]; // Increase reduction with depth
                 if (isKiller) reduction--; // Reduce killer moves less
                 if (reduction < 0) reduction = 0;
