@@ -387,7 +387,7 @@ void Board::unmakeMove(Move move) {
         if (sq_to_col(toSq) > sq_to_col(fromSq)) {
             int rookFromSq = row_col_to_sq(sq_to_row(toSq), sq_to_col(toSq) - 1);
             int rookToSq = row_col_to_sq(sq_to_row(toSq), sq_to_col(toSq) + 1);
-            int rookPiece = stm == WHITE ? W_ROOK : B_ROOK;
+            int rookPiece = make_piece(ROOK, piece_color(pieceBase));
             bb_clear(*this, rookPiece, rookFromSq);
             bb_set(*this, rookPiece, rookToSq);
             mailbox[rookFromSq] = 0;
@@ -395,7 +395,7 @@ void Board::unmakeMove(Move move) {
         } else {
             int rookFromSq = row_col_to_sq(sq_to_row(toSq), sq_to_col(toSq) + 1);
             int rookToSq = row_col_to_sq(sq_to_row(toSq), sq_to_col(toSq) - 2);
-            int rookPiece = stm == WHITE ? W_ROOK : B_ROOK;
+            int rookPiece = make_piece(ROOK, piece_color(pieceBase));
             bb_clear(*this, rookPiece, rookFromSq);
             bb_set(*this, rookPiece, rookToSq);
             mailbox[rookFromSq] = 0;
