@@ -159,6 +159,9 @@ Move MovePicker::next_move() {
         switch (stage) {
             case STAGE_TT:
                 stage = STAGE_GEN_NOISY;
+                if (ttMove != 0 && is_move_pseudo_legal(board, ttMove) && is_legal(ttMove)) {
+                    return ttMove;
+                }
                 break;
 
             case STAGE_GEN_NOISY:
@@ -172,6 +175,7 @@ Move MovePicker::next_move() {
             case STAGE_GOOD_NOISY: {
                 Move move = next_scored_move();
                 if (move != 0) {
+                    if (move == ttMove) continue;
                     if (!staticExchangeEvaluation(board, move, 0)) {
                         if (badCaptureCount < 256) {
                             badCaptures[badCaptureCount++] = move;
@@ -203,6 +207,7 @@ Move MovePicker::next_move() {
             case STAGE_QUIET: {
                 Move move = next_scored_move();
                 if (move != 0) {
+                    if (move == ttMove) continue;
                     if (!is_legal(move)) {
                         continue;
                     }
@@ -217,6 +222,8 @@ Move MovePicker::next_move() {
             case STAGE_BAD_NOISY:
                 if (currentMoveIndex < badCaptureCount) {
                     Move move = badCaptures[currentMoveIndex++];
+                    // TT move shouldn't be in badCaptures if we skipped it above, but just in case
+                    if (move == ttMove) continue;
                     if (!is_legal(move)) {
                         continue;
                     }
