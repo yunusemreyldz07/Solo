@@ -600,6 +600,15 @@ void get_capture_moves(Board& board, Move moves[], int& moveCount) {
     }
 }
 
+void generate_pseudo_moves(const Board& board, Move* moves, int& moveCount) {
+    generate_pawn_moves_bb(board, moves, moveCount);
+    generate_knight_moves_bb(board, moves, moveCount);
+    generate_bishop_moves_bb(board, moves, moveCount);
+    generate_rook_moves_bb(board, moves, moveCount);
+    generate_queen_moves_bb(board, moves, moveCount);
+    generate_king_moves_bb(board, moves, moveCount);
+}
+
 void generate_pseudo_captures(const Board& board, Move* moves, int& moveCount) {
     generate_pawn_captures_bb(board, moves, moveCount);
     generate_knight_captures_bb(board, moves, moveCount);

@@ -41,6 +41,7 @@ private:
     void score_captures();
     void score_quiets();
     Move next_scored_move();
+    bool is_legal(Move move);
 
 public:
     MovePicker(Board& b, Move tt, Move k1, Move k2, int p, bool qsearch = false);

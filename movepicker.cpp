@@ -61,7 +61,7 @@ void MovePicker::generate_legacy_moves() {
     if (isQSearch) {
         generate_pseudo_captures(board, moves, moveCount);
     } else {
-        get_all_moves(board, moves, moveCount);
+        generate_pseudo_moves(board, moves, moveCount);
     }
 }
 
@@ -143,10 +143,25 @@ bool MovePicker::has_moves() const {
     return moveCount > 0;
 }
 
+bool MovePicker::is_legal(Move move) {
+    const bool sideToMove = board.stm == WHITE;
+
+    board.makeMove(move);
+    int kingSq = -1;
+    king_square(board, sideToMove, kingSq);
+    const bool legal = (kingSq != -1) && !is_square_attacked(board, kingSq, board.stm == WHITE);
+    board.unmakeMove(move);
+
+    return legal;
+}
+
 Move MovePicker::next_move() {
     while (currentMoveIndex < moveCount) {
         Move move = moves[currentMoveIndex++];
         if (isQSearch && !staticExchangeEvaluation(board, move, 0)) {
+            continue;
+        }
+        if (!isQSearch && !is_legal(move)) {
             continue;
         }
         return move;
