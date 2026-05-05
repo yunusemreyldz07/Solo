@@ -721,14 +721,16 @@ void generate_pseudo_quiets(const Board& board, Move* moves, int& moveCount) {
         if (whiteToMove && from == 4) {
             if (board.castling & CASTLE_WK) {
                 const Bitboard emptyMask = (1ULL << 5) | (1ULL << 6);
-                if ((occ & emptyMask) == 0 && !is_square_attacked_bb(board, 4, opponentIsWhite) && !is_square_attacked_bb(board, 5, opponentIsWhite) && !is_square_attacked_bb(board, 6, opponentIsWhite)) {
+                const bool rookPresent = (board.piece[ROOK - 1] & board.color[WHITE]) & (1ULL << 7);
+                if ((occ & emptyMask) == 0 && !is_square_attacked_bb(board, 4, opponentIsWhite) && !is_square_attacked_bb(board, 5, opponentIsWhite) && !is_square_attacked_bb(board, 6, opponentIsWhite) && rookPresent) {
                     push_move(moves + moveCount, 4, 6, FLAG_CASTLE_KING);
                     moveCount++;
                 }
             }
             if (board.castling & CASTLE_WQ) {
                 const Bitboard emptyMask = (1ULL << 1) | (1ULL << 2) | (1ULL << 3);
-                if ((occ & emptyMask) == 0 && !is_square_attacked_bb(board, 4, opponentIsWhite) && !is_square_attacked_bb(board, 3, opponentIsWhite) && !is_square_attacked_bb(board, 2, opponentIsWhite)) {
+                const bool rookPresent = (board.piece[ROOK - 1] & board.color[WHITE]) & (1ULL << 0);
+                if ((occ & emptyMask) == 0 && !is_square_attacked_bb(board, 4, opponentIsWhite) && !is_square_attacked_bb(board, 3, opponentIsWhite) && !is_square_attacked_bb(board, 2, opponentIsWhite) && rookPresent) {
                     push_move(moves + moveCount, 4, 2, FLAG_CASTLE_QUEEN);
                     moveCount++;
                 }
@@ -736,14 +738,16 @@ void generate_pseudo_quiets(const Board& board, Move* moves, int& moveCount) {
         } else if (!whiteToMove && from == 60) {
             if (board.castling & CASTLE_BK) {
                 const Bitboard emptyMask = (1ULL << 61) | (1ULL << 62);
-                if ((occ & emptyMask) == 0 && !is_square_attacked_bb(board, 60, opponentIsWhite) && !is_square_attacked_bb(board, 61, opponentIsWhite) && !is_square_attacked_bb(board, 62, opponentIsWhite)) {
+                const bool rookPresent = (board.piece[ROOK - 1] & board.color[BLACK]) & (1ULL << 63);
+                if ((occ & emptyMask) == 0 && !is_square_attacked_bb(board, 60, opponentIsWhite) && !is_square_attacked_bb(board, 61, opponentIsWhite) && !is_square_attacked_bb(board, 62, opponentIsWhite) && rookPresent) {
                     push_move(moves + moveCount, 60, 62, FLAG_CASTLE_KING);
                     moveCount++;
                 }
             }
             if (board.castling & CASTLE_BQ) {
                 const Bitboard emptyMask = (1ULL << 57) | (1ULL << 58) | (1ULL << 59);
-                if ((occ & emptyMask) == 0 && !is_square_attacked_bb(board, 60, opponentIsWhite) && !is_square_attacked_bb(board, 59, opponentIsWhite) && !is_square_attacked_bb(board, 58, opponentIsWhite)) {
+                const bool rookPresent = (board.piece[ROOK - 1] & board.color[BLACK]) & (1ULL << 56);
+                if ((occ & emptyMask) == 0 && !is_square_attacked_bb(board, 60, opponentIsWhite) && !is_square_attacked_bb(board, 59, opponentIsWhite) && !is_square_attacked_bb(board, 58, opponentIsWhite) && rookPresent) {
                     push_move(moves + moveCount, 60, 58, FLAG_CASTLE_QUEEN);
                     moveCount++;
                 }
