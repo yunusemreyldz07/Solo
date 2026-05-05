@@ -4,8 +4,7 @@ static const int PIECE_VALUES_MP[7] = {0, 100, 320, 330, 500, 900, 20000};
 static constexpr int MP_SEE_THRESHOLD = -82;
 
 MovePicker::MovePicker(Board& b, Move tt, Move k1, Move k2, int p, bool qsearch)
-    : board(b), ttMove(tt), ply(p), stage(STAGE_TT), moveCount(0), badCaptureCount(0), currentMoveIndex(0),
-      isQSearch(qsearch), generated(false), ttTried(false) {
+    : board(b), ttMove(tt), ply(p), stage(STAGE_TT), moveCount(0), badCaptureCount(0), currentMoveIndex(0), isQSearch(qsearch) {
     killers[0] = k1;
     killers[1] = k2;
 }
@@ -52,32 +51,6 @@ int MovePicker::score_move(Move move) const {
     return score;
 }
 
-void MovePicker::generate_legacy_moves() {
-    moveCount = 0;
-    currentMoveIndex = 0;
-    badCaptureCount = 0;
-
-    if (isQSearch) {
-        generate_pseudo_captures(board, moves, moveCount);
-    } else {
-        generate_pseudo_moves(board, moves, moveCount);
-    }
-    generated = true;
-}
-
-void MovePicker::ensure_generated() {
-    if (!generated) {
-        generate_legacy_moves();
-        order_moves();
-    }
-}
-
-void MovePicker::order_moves() {
-    for (int i = 0; i < moveCount; i++) {
-        scores[i] = score_move(moves[i]);
-    }
-}
-
 void MovePicker::score_captures() {
     for (int i = 0; i < moveCount; i++) {
         Move move = moves[i];
@@ -91,7 +64,13 @@ void MovePicker::score_captures() {
         int attackerPiece = piece_at_sq(board, from);
         int attackerValue = PIECE_VALUES_MP[piece_type(attackerPiece)];
 
-        scores[i] = victimValue * 10 - attackerValue;
+        int score = victimValue * 10 - attackerValue;
+
+        if (ttMove != 0 && move == ttMove) {
+            score += SCORE_TT_MOVE;
+        }
+
+        scores[i] = score;
     }
 }
 
@@ -102,12 +81,26 @@ void MovePicker::score_quiets() {
         int to = move_to(move);
         int piece = piece_at_sq(board, from);
 
-        scores[i] = get_history_score(board.stm, from, to) + get_conhist_score(piece - 1, to, ply);
+        int score = 0;
+
+        if (ttMove != 0 && move == ttMove) {
+            score += SCORE_TT_MOVE;
+        }
+
+        if (ply < MAX_PLY && move == killers[0]) {
+            score += SCORE_KILLER_1;
+        } else if (ply < MAX_PLY && move == killers[1]) {
+            score += SCORE_KILLER_2;
+        } else {
+            score += get_history_score(board.stm, from, to);
+            score += get_conhist_score(piece - 1, to, ply);
+        }
+
+        scores[i] = score;
     }
 }
 
 Move MovePicker::next_scored_move() {
-    ensure_generated();
     if (currentMoveIndex >= moveCount) return 0;
     
     int bestScore = -9999999;
@@ -135,9 +128,8 @@ Move MovePicker::next_scored_move() {
     return bestMove;
 }
 
-bool MovePicker::has_moves() {
-    ensure_generated();
-    return moveCount > 0;
+bool MovePicker::has_moves() const {
+    return true;
 }
 
 bool MovePicker::is_legal(Move move) {
@@ -153,34 +145,78 @@ bool MovePicker::is_legal(Move move) {
 }
 
 Move MovePicker::next_move() {
-    if (!ttTried) {
-        ttTried = true;
-        if (ttMove != 0 && is_move_pseudo_legal(board, ttMove)) {
-            if (isQSearch && !is_capture(ttMove)) {
-                // qsearch only searches captures
-            } else if (isQSearch && !staticExchangeEvaluation(board, ttMove, 0)) {
-                // qsearch see filter
-            } else if (!isQSearch && !is_legal(ttMove)) {
-                // skip illegal TT moves
-            } else {
-                return ttMove;
-            }
-        }
-    }
+    while (true) {
+        switch (stage) {
+            case STAGE_TT:
+                stage = STAGE_GEN_NOISY;
+                break;
 
-    ensure_generated();
-    while (currentMoveIndex < moveCount) {
-        Move move = next_scored_move();
-        if (moves_equal(move, ttMove)) {
-            continue;
+            case STAGE_GEN_NOISY:
+                moveCount = 0;
+                currentMoveIndex = 0;
+                generate_pseudo_captures(board, moves, moveCount);
+                score_captures();
+                stage = STAGE_GOOD_NOISY;
+                break;
+
+            case STAGE_GOOD_NOISY: {
+                Move move = next_scored_move();
+                if (move != 0) {
+                    if (!staticExchangeEvaluation(board, move, 0)) {
+                        if (badCaptureCount < 256) {
+                            badCaptures[badCaptureCount++] = move;
+                        }
+                        continue;
+                    }
+                    if (!isQSearch && !is_legal(move)) {
+                        continue;
+                    }
+                    return move;
+                }
+
+                if (isQSearch) {
+                    stage = STAGE_DONE;
+                } else {
+                    stage = STAGE_GEN_QUIET;
+                }
+                break;
+            }
+
+            case STAGE_GEN_QUIET:
+                moveCount = 0;
+                currentMoveIndex = 0;
+                generate_pseudo_quiets(board, moves, moveCount);
+                score_quiets();
+                stage = STAGE_QUIET;
+                break;
+
+            case STAGE_QUIET: {
+                Move move = next_scored_move();
+                if (move != 0) {
+                    if (!is_legal(move)) {
+                        continue;
+                    }
+                    return move;
+                }
+
+                stage = STAGE_BAD_NOISY;
+                currentMoveIndex = 0;
+                break;
+            }
+
+            case STAGE_BAD_NOISY:
+                if (currentMoveIndex < badCaptureCount) {
+                    Move move = badCaptures[currentMoveIndex++];
+                    if (!is_legal(move)) {
+                        continue;
+                    }
+                    return move;
+                }
+                stage = STAGE_DONE;
+                break;
+
+            case STAGE_DONE:
+                return 0;
         }
-        if (isQSearch && !staticExchangeEvaluation(board, move, 0)) {
-            continue;
-        }
-        if (!isQSearch && !is_legal(move)) {
-            continue;
-        }
-        return move;
     }
-    return 0;
 }
