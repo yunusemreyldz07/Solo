@@ -6,6 +6,7 @@
 #include <iostream>
 #include <sstream>
 #include <cstring> // for memcpy
+#include <cstdio> // for snprintf
 
 char columns[] = "abcdefgh";
 
@@ -147,6 +148,17 @@ void Board::makeMove(Move move) {
 
 
     // Update 50-move clock: reset on pawn move or capture, otherwise increment
+    // Sanity check: piece must exist at origin
+    if (movingPiece == 0) {
+        char moveStr[6];
+        snprintf(moveStr, sizeof(moveStr), "%c%d%c%d",
+                 'a' + (fromSq % 8), 8 - (fromSq / 8),
+                 'a' + (toSq % 8), 8 - (toSq / 8));
+        std::string error = std::string("Board corruption: no piece at source square ")
+            + moveStr + " (flags=" + std::to_string(move_flags(move)) + ")";
+        throw std::runtime_error(error);
+    }
+    
     if (piece_type(movingPiece) == PAWN || target_piece != 0) {
         halfMoveClock = 0;
     } else {
@@ -275,7 +287,14 @@ void Board::makeMove(Move move) {
 
             bb_clear(*this, rookPiece, rookFromSq);
             bb_set(*this, rookPiece, rookToSq);
-            mailbox[rookToSq] = mailbox[rookFromSq];
+            int rook = mailbox[rookFromSq];
+            if (rook != rookPiece) {
+                char msg[200];
+                snprintf(msg, sizeof(msg), "Castling: rook corruption at rookFromSq=%d, expected %d, got %d",
+                         rookFromSq, rookPiece, rook);
+                throw std::runtime_error(msg);
+            }
+            mailbox[rookToSq] = rook;
             mailbox[rookFromSq] = 0;
             hash ^= z.piece[piece_to_zobrist_index(rookPiece)][rookFromSq];
             hash ^= z.piece[piece_to_zobrist_index(rookPiece)][rookToSq];
@@ -286,7 +305,14 @@ void Board::makeMove(Move move) {
 
             bb_clear(*this, rookPiece, rookFromSq);
             bb_set(*this, rookPiece, rookToSq);
-            mailbox[rookToSq] = mailbox[rookFromSq];
+            int rook = mailbox[rookFromSq];
+            if (rook != rookPiece) {
+                char msg[200];
+                snprintf(msg, sizeof(msg), "Castling: queenside rook corruption at rookFromSq=%d, expected %d, got %d",
+                         rookFromSq, rookPiece, rook);
+                throw std::runtime_error(msg);
+            }
+            mailbox[rookToSq] = rook;
             mailbox[rookFromSq] = 0;
             hash ^= z.piece[piece_to_zobrist_index(rookPiece)][rookFromSq];
             hash ^= z.piece[piece_to_zobrist_index(rookPiece)][rookToSq];
@@ -345,10 +371,10 @@ void Board::makeMove(Move move) {
         castling &= ~CASTLE_WQ;
     }
     if (st.capturedPiece == B_ROOK && toSq == 56) {
-        castling &= ~CASTLE_BK;
+        castling &= ~CASTLE_BQ;
     }
     if (st.capturedPiece == B_ROOK && toSq == 63) {
-        castling &= ~CASTLE_BQ;
+        castling &= ~CASTLE_BK;
     }
 
     hash ^= z.castling[castling];
@@ -367,10 +393,14 @@ void Board::unmakeMove(Move move) {
 
     UndoState st = this->undoStack.back();
     this->undoStack.pop_back();
+        // Sanity check before undoing
+        const int fromSq = move_from(move);
+        const int toSq = move_to(move);
+        if (mailbox[toSq] == 0) {
+            throw std::runtime_error("Board corruption at start of unmakeMove: destination square is empty");
+        }
+    
     stm = other_color(stm);
-
-    const int fromSq = move_from(move);
-    const int toSq = move_to(move);
 
     int pieceOnTo = mailbox[toSq];
     int pieceBase = pieceOnTo;
@@ -388,6 +418,12 @@ void Board::unmakeMove(Move move) {
             int rookFromSq = row_col_to_sq(sq_to_row(toSq), sq_to_col(toSq) - 1);
             int rookToSq = row_col_to_sq(sq_to_row(toSq), sq_to_col(toSq) + 1);
             int rookPiece = make_piece(ROOK, piece_color(pieceBase));
+                        if (mailbox[rookFromSq] != rookPiece) {
+                            char msg[200];
+                            snprintf(msg, sizeof(msg), "Unmake: rook not at rookFromSq=%d, expected %d, got %d",
+                                     rookFromSq, rookPiece, mailbox[rookFromSq]);
+                            throw std::runtime_error(msg);
+                        }
             bb_clear(*this, rookPiece, rookFromSq);
             bb_set(*this, rookPiece, rookToSq);
             mailbox[rookFromSq] = 0;
@@ -396,6 +432,12 @@ void Board::unmakeMove(Move move) {
             int rookFromSq = row_col_to_sq(sq_to_row(toSq), sq_to_col(toSq) + 1);
             int rookToSq = row_col_to_sq(sq_to_row(toSq), sq_to_col(toSq) - 2);
             int rookPiece = make_piece(ROOK, piece_color(pieceBase));
+            if (mailbox[rookFromSq] != rookPiece) {
+                char msg[200];
+                snprintf(msg, sizeof(msg), "Unmake queenside: rook not at rookFromSq=%d, expected %d, got %d",
+                         rookFromSq, rookPiece, mailbox[rookFromSq]);
+                throw std::runtime_error(msg);
+            }
             bb_clear(*this, rookPiece, rookFromSq);
             bb_set(*this, rookPiece, rookToSq);
             mailbox[rookFromSq] = 0;
