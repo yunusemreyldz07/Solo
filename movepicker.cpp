@@ -4,11 +4,10 @@ static const int PIECE_VALUES_MP[7] = {0, 100, 320, 330, 500, 900, 20000};
 static constexpr int MP_SEE_THRESHOLD = -82;
 
 MovePicker::MovePicker(Board& b, Move tt, Move k1, Move k2, int p, bool qsearch)
-    : board(b), ttMove(tt), ply(p), stage(STAGE_TT), moveCount(0), badCaptureCount(0), currentMoveIndex(0), isQSearch(qsearch) {
+    : board(b), ttMove(tt), ply(p), stage(STAGE_TT), moveCount(0), badCaptureCount(0), currentMoveIndex(0),
+      isQSearch(qsearch), generated(false), ttTried(false) {
     killers[0] = k1;
     killers[1] = k2;
-    generate_legacy_moves();
-    order_moves();
 }
 
 int MovePicker::score_move(Move move) const {
@@ -63,6 +62,14 @@ void MovePicker::generate_legacy_moves() {
     } else {
         generate_pseudo_moves(board, moves, moveCount);
     }
+    generated = true;
+}
+
+void MovePicker::ensure_generated() {
+    if (!generated) {
+        generate_legacy_moves();
+        order_moves();
+    }
 }
 
 void MovePicker::order_moves() {
@@ -100,6 +107,7 @@ void MovePicker::score_quiets() {
 }
 
 Move MovePicker::next_scored_move() {
+    ensure_generated();
     if (currentMoveIndex >= moveCount) return 0;
     
     int bestScore = -9999999;
@@ -127,7 +135,8 @@ Move MovePicker::next_scored_move() {
     return bestMove;
 }
 
-bool MovePicker::has_moves() const {
+bool MovePicker::has_moves() {
+    ensure_generated();
     return moveCount > 0;
 }
 
@@ -144,8 +153,27 @@ bool MovePicker::is_legal(Move move) {
 }
 
 Move MovePicker::next_move() {
+    if (!ttTried) {
+        ttTried = true;
+        if (ttMove != 0 && is_move_pseudo_legal(board, ttMove)) {
+            if (isQSearch && !is_capture(ttMove)) {
+                // qsearch only searches captures
+            } else if (isQSearch && !staticExchangeEvaluation(board, ttMove, 0)) {
+                // qsearch see filter
+            } else if (!isQSearch && !is_legal(ttMove)) {
+                // skip illegal TT moves
+            } else {
+                return ttMove;
+            }
+        }
+    }
+
+    ensure_generated();
     while (currentMoveIndex < moveCount) {
         Move move = next_scored_move();
+        if (moves_equal(move, ttMove)) {
+            continue;
+        }
         if (isQSearch && !staticExchangeEvaluation(board, move, 0)) {
             continue;
         }

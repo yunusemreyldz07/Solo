@@ -34,9 +34,12 @@ private:
     int currentMoveIndex;
 
     bool isQSearch;
+    bool generated;
+    bool ttTried;
 
     int score_move(Move move) const;
     void generate_legacy_moves();
+    void ensure_generated();
     void order_moves();
     void score_captures();
     void score_quiets();
@@ -46,7 +49,7 @@ private:
 public:
     MovePicker(Board& b, Move tt, Move k1, Move k2, int p, bool qsearch = false);
 
-    bool has_moves() const;
+    bool has_moves();
     Move next_move();
 };
 
