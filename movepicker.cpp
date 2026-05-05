@@ -69,19 +69,6 @@ void MovePicker::order_moves() {
     for (int i = 0; i < moveCount; i++) {
         scores[i] = score_move(moves[i]);
     }
-
-    for (int i = 1; i < moveCount; i++) {
-        int tmpScore = scores[i];
-        Move tmpMove = moves[i];
-        int j = i - 1;
-        while (j >= 0 && scores[j] < tmpScore) {
-            scores[j + 1] = scores[j];
-            moves[j + 1] = moves[j];
-            j--;
-        }
-        scores[j + 1] = tmpScore;
-        moves[j + 1] = tmpMove;
-    }
 }
 
 void MovePicker::score_captures() {
@@ -125,13 +112,14 @@ Move MovePicker::next_scored_move() {
         }
     }
     
-    // Swap
     Move bestMove = moves[bestIndex];
     int score = scores[bestIndex];
-    
-    moves[bestIndex] = moves[currentMoveIndex];
-    scores[bestIndex] = scores[currentMoveIndex];
-    
+
+    for (int i = bestIndex; i > currentMoveIndex; i--) {
+        moves[i] = moves[i - 1];
+        scores[i] = scores[i - 1];
+    }
+
     moves[currentMoveIndex] = bestMove;
     scores[currentMoveIndex] = score;
     
@@ -157,7 +145,7 @@ bool MovePicker::is_legal(Move move) {
 
 Move MovePicker::next_move() {
     while (currentMoveIndex < moveCount) {
-        Move move = moves[currentMoveIndex++];
+        Move move = next_scored_move();
         if (isQSearch && !staticExchangeEvaluation(board, move, 0)) {
             continue;
         }
