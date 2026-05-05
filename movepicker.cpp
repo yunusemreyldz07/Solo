@@ -59,7 +59,7 @@ void MovePicker::generate_legacy_moves() {
     badCaptureCount = 0;
 
     if (isQSearch) {
-        get_capture_moves(board, moves, moveCount);
+        generate_pseudo_captures(board, moves, moveCount);
     } else {
         get_all_moves(board, moves, moveCount);
     }
