@@ -128,8 +128,18 @@ Move MovePicker::next_scored_move() {
     return bestMove;
 }
 
-bool MovePicker::has_moves() const {
-    return true;
+bool MovePicker::has_moves() {
+    Move pseudoMoves[256];
+    int pseudoMoveCount = 0;
+    generate_pseudo_moves(board, pseudoMoves, pseudoMoveCount);
+
+    for (int i = 0; i < pseudoMoveCount; i++) {
+        if (is_legal(pseudoMoves[i])) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool MovePicker::is_legal(Move move) {

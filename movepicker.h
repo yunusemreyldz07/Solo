@@ -42,7 +42,7 @@ private:
 public:
     MovePicker(Board& b, Move tt, Move k1, Move k2, int p, bool qsearch = false);
 
-    bool has_moves() const;
+    bool has_moves();
     Move next_move();
 };
 
