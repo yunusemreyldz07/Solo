@@ -599,3 +599,178 @@ void get_capture_moves(Board& board, Move moves[], int& moveCount) {
         board.unmakeMove(m);
     }
 }
+
+void generate_pseudo_moves(const Board& board, Move* moves, int& moveCount) {
+    generate_pawn_moves_bb(board, moves, moveCount);
+    generate_knight_moves_bb(board, moves, moveCount);
+    generate_bishop_moves_bb(board, moves, moveCount);
+    generate_rook_moves_bb(board, moves, moveCount);
+    generate_queen_moves_bb(board, moves, moveCount);
+    generate_king_moves_bb(board, moves, moveCount);
+}
+
+void generate_pseudo_captures(const Board& board, Move* moves, int& moveCount) {
+    generate_pawn_captures_bb(board, moves, moveCount);
+    generate_knight_captures_bb(board, moves, moveCount);
+    generate_bishop_captures_bb(board, moves, moveCount);
+    generate_rook_captures_bb(board, moves, moveCount);
+    generate_queen_captures_bb(board, moves, moveCount);
+    generate_king_captures_bb(board, moves, moveCount);
+}
+
+void generate_pseudo_quiets(const Board& board, Move* moves, int& moveCount) {
+    const bool whiteToMove = board.stm == WHITE;
+    const int us = whiteToMove ? WHITE : BLACK;
+    const Bitboard own = board.color[us];
+    const Bitboard opp = board.color[other_color(us)];
+    const Bitboard occ = own | opp;
+    const Bitboard empty = ~occ;
+
+    // Pawn quiets
+    Bitboard pawns = board.piece[PAWN - 1] & own;
+    while (pawns) {
+        int from = lsb(pawns);
+        pawns &= pawns - 1;
+
+        int to = whiteToMove ? (from + 8) : (from - 8);
+        if (to >= 0 && to < 64 && (empty & (1ULL << to))) {
+            bool isPromo = whiteToMove ? (from >= 48) : (from <= 15);
+            if (isPromo) {
+                for (int promo : {QUEEN, ROOK, BISHOP, KNIGHT}) {
+                    push_move(moves + moveCount, from, to, get_promo_flag(promo, false));
+                    moveCount++;
+                }
+            } else {
+                push_move(moves + moveCount, from, to, FLAG_QUIET);
+                moveCount++;
+
+                bool onStartRank = whiteToMove ? (from >= 8 && from <= 15) : (from >= 48 && from <= 55);
+                if (onStartRank) {
+                    int to2 = whiteToMove ? (from + 16) : (from - 16);
+                    if (empty & (1ULL << to2)) {
+                        push_move(moves + moveCount, from, to2, FLAG_DOUBLE_PAWN);
+                        moveCount++;
+                    }
+                }
+            }
+        }
+    }
+
+    // Knight quiets
+    Bitboard knights = board.piece[KNIGHT - 1] & own;
+    while (knights) {
+        int from = lsb(knights);
+        knights &= knights - 1;
+        Bitboard targets = knight_attacks[from] & empty;
+        while (targets) {
+            push_move(moves + moveCount, from, lsb(targets), FLAG_QUIET);
+            targets &= targets - 1;
+            moveCount++;
+        }
+    }
+
+    // Slider quiets
+    Bitboard bishops = board.piece[BISHOP - 1] & own;
+    while (bishops) {
+        int from = lsb(bishops);
+        bishops &= bishops - 1;
+        Bitboard targets = get_bishop_attacks(from, occ) & empty;
+        while (targets) {
+            push_move(moves + moveCount, from, lsb(targets), FLAG_QUIET);
+            targets &= targets - 1;
+            moveCount++;
+        }
+    }
+
+    Bitboard rooks = board.piece[ROOK - 1] & own;
+    while (rooks) {
+        int from = lsb(rooks);
+        rooks &= rooks - 1;
+        Bitboard targets = get_rook_attacks(from, occ) & empty;
+        while (targets) {
+            push_move(moves + moveCount, from, lsb(targets), FLAG_QUIET);
+            targets &= targets - 1;
+            moveCount++;
+        }
+    }
+
+    Bitboard queens = board.piece[QUEEN - 1] & own;
+    while (queens) {
+        int from = lsb(queens);
+        queens &= queens - 1;
+        Bitboard targets = (get_bishop_attacks(from, occ) | get_rook_attacks(from, occ)) & empty;
+        while (targets) {
+            push_move(moves + moveCount, from, lsb(targets), FLAG_QUIET);
+            targets &= targets - 1;
+            moveCount++;
+        }
+    }
+
+    // King quiets & Castling
+    Bitboard kings = board.piece[KING - 1] & own;
+    if (kings) {
+        int from = lsb(kings);
+        Bitboard targets = king_attacks[from] & empty;
+        while (targets) {
+            push_move(moves + moveCount, from, lsb(targets), FLAG_QUIET);
+            targets &= targets - 1;
+            moveCount++;
+        }
+
+        const bool opponentIsWhite = !whiteToMove;
+        if (whiteToMove && from == 4) {
+            if (board.castling & CASTLE_WK) {
+                const Bitboard emptyMask = (1ULL << 5) | (1ULL << 6);
+                const bool rookPresent = (board.piece[ROOK - 1] & board.color[WHITE]) & (1ULL << 7);
+                if ((occ & emptyMask) == 0 && !is_square_attacked_bb(board, 4, opponentIsWhite) && !is_square_attacked_bb(board, 5, opponentIsWhite) && !is_square_attacked_bb(board, 6, opponentIsWhite) && rookPresent) {
+                    push_move(moves + moveCount, 4, 6, FLAG_CASTLE_KING);
+                    moveCount++;
+                }
+            }
+            if (board.castling & CASTLE_WQ) {
+                const Bitboard emptyMask = (1ULL << 1) | (1ULL << 2) | (1ULL << 3);
+                const bool rookPresent = (board.piece[ROOK - 1] & board.color[WHITE]) & (1ULL << 0);
+                if ((occ & emptyMask) == 0 && !is_square_attacked_bb(board, 4, opponentIsWhite) && !is_square_attacked_bb(board, 3, opponentIsWhite) && !is_square_attacked_bb(board, 2, opponentIsWhite) && rookPresent) {
+                    push_move(moves + moveCount, 4, 2, FLAG_CASTLE_QUEEN);
+                    moveCount++;
+                }
+            }
+        } else if (!whiteToMove && from == 60) {
+            if (board.castling & CASTLE_BK) {
+                const Bitboard emptyMask = (1ULL << 61) | (1ULL << 62);
+                const bool rookPresent = (board.piece[ROOK - 1] & board.color[BLACK]) & (1ULL << 63);
+                if ((occ & emptyMask) == 0 && !is_square_attacked_bb(board, 60, opponentIsWhite) && !is_square_attacked_bb(board, 61, opponentIsWhite) && !is_square_attacked_bb(board, 62, opponentIsWhite) && rookPresent) {
+                    push_move(moves + moveCount, 60, 62, FLAG_CASTLE_KING);
+                    moveCount++;
+                }
+            }
+            if (board.castling & CASTLE_BQ) {
+                const Bitboard emptyMask = (1ULL << 57) | (1ULL << 58) | (1ULL << 59);
+                const bool rookPresent = (board.piece[ROOK - 1] & board.color[BLACK]) & (1ULL << 56);
+                if ((occ & emptyMask) == 0 && !is_square_attacked_bb(board, 60, opponentIsWhite) && !is_square_attacked_bb(board, 59, opponentIsWhite) && !is_square_attacked_bb(board, 58, opponentIsWhite) && rookPresent) {
+                    push_move(moves + moveCount, 60, 58, FLAG_CASTLE_QUEEN);
+                    moveCount++;
+                }
+            }
+        }
+    }
+}
+
+bool is_move_pseudo_legal(const Board& board, Move move) {
+    if (move == 0) return false;
+    int from = move_from(move);
+    int to = move_to(move);
+    int piece = piece_at_sq(board, from);
+
+    if (piece == 0 || piece_color(piece) != board.stm) return false;
+
+    // is the move even in the pseudo-legal move list?
+    Move moves[256];
+    int count = 0;
+    generate_pseudo_captures(board, moves, count);
+    generate_pseudo_quiets(board, moves, count);
+    for (int i = 0; i < count; i++) {
+        if (moves_equal(moves[i], move)) return true;
+    }
+    return false;
+}

@@ -248,6 +248,13 @@ void get_capture_moves(Board& board, Move moves[], int& moveCount);
 bool is_square_attacked(const Board& board, int sq, bool isWhiteAttacker);
 
 int staticExchangeEvaluation(const Board& board, const Move& move, int threshold);
+
+// Pseudo-legal move generation
+void generate_pseudo_moves(const Board& board, Move moves[], int& moveCount);
+void generate_pseudo_captures(const Board& board, Move moves[], int& moveCount);
+void generate_pseudo_quiets(const Board& board, Move moves[], int& moveCount);
+bool is_move_pseudo_legal(const Board& board, Move move);
+
 // Utility functions
 void printBoard(const Board& board);
 Move uci_to_move(const std::string& uci, const Board& board);

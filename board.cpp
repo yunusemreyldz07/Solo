@@ -6,6 +6,7 @@
 #include <iostream>
 #include <sstream>
 #include <cstring> // for memcpy
+#include <cstdio> // for snprintf
 
 char columns[] = "abcdefgh";
 
@@ -135,10 +136,6 @@ void Board::makeMove(Move move) {
     } else {
         st.capturedPiece = mailbox[to]; 
     }
-
-
-
-
 
     const int fromSq = move_from(move);
     const int toSq = move_to(move);
@@ -275,7 +272,8 @@ void Board::makeMove(Move move) {
 
             bb_clear(*this, rookPiece, rookFromSq);
             bb_set(*this, rookPiece, rookToSq);
-            mailbox[rookToSq] = mailbox[rookFromSq];
+            int rook = mailbox[rookFromSq];
+            mailbox[rookToSq] = rook;
             mailbox[rookFromSq] = 0;
             hash ^= z.piece[piece_to_zobrist_index(rookPiece)][rookFromSq];
             hash ^= z.piece[piece_to_zobrist_index(rookPiece)][rookToSq];
@@ -286,7 +284,8 @@ void Board::makeMove(Move move) {
 
             bb_clear(*this, rookPiece, rookFromSq);
             bb_set(*this, rookPiece, rookToSq);
-            mailbox[rookToSq] = mailbox[rookFromSq];
+            int rook = mailbox[rookFromSq];
+            mailbox[rookToSq] = rook;
             mailbox[rookFromSq] = 0;
             hash ^= z.piece[piece_to_zobrist_index(rookPiece)][rookFromSq];
             hash ^= z.piece[piece_to_zobrist_index(rookPiece)][rookToSq];
@@ -345,10 +344,10 @@ void Board::makeMove(Move move) {
         castling &= ~CASTLE_WQ;
     }
     if (st.capturedPiece == B_ROOK && toSq == 56) {
-        castling &= ~CASTLE_BK;
+        castling &= ~CASTLE_BQ;
     }
     if (st.capturedPiece == B_ROOK && toSq == 63) {
-        castling &= ~CASTLE_BQ;
+        castling &= ~CASTLE_BK;
     }
 
     hash ^= z.castling[castling];
@@ -367,10 +366,10 @@ void Board::unmakeMove(Move move) {
 
     UndoState st = this->undoStack.back();
     this->undoStack.pop_back();
-    stm = other_color(stm);
-
     const int fromSq = move_from(move);
     const int toSq = move_to(move);
+    
+    stm = other_color(stm);
 
     int pieceOnTo = mailbox[toSq];
     int pieceBase = pieceOnTo;
@@ -387,7 +386,7 @@ void Board::unmakeMove(Move move) {
         if (sq_to_col(toSq) > sq_to_col(fromSq)) {
             int rookFromSq = row_col_to_sq(sq_to_row(toSq), sq_to_col(toSq) - 1);
             int rookToSq = row_col_to_sq(sq_to_row(toSq), sq_to_col(toSq) + 1);
-            int rookPiece = stm == WHITE ? W_ROOK : B_ROOK;
+            int rookPiece = make_piece(ROOK, piece_color(pieceBase));
             bb_clear(*this, rookPiece, rookFromSq);
             bb_set(*this, rookPiece, rookToSq);
             mailbox[rookFromSq] = 0;
@@ -395,7 +394,7 @@ void Board::unmakeMove(Move move) {
         } else {
             int rookFromSq = row_col_to_sq(sq_to_row(toSq), sq_to_col(toSq) + 1);
             int rookToSq = row_col_to_sq(sq_to_row(toSq), sq_to_col(toSq) - 2);
-            int rookPiece = stm == WHITE ? W_ROOK : B_ROOK;
+            int rookPiece = make_piece(ROOK, piece_color(pieceBase));
             bb_clear(*this, rookPiece, rookFromSq);
             bb_set(*this, rookPiece, rookToSq);
             mailbox[rookFromSq] = 0;

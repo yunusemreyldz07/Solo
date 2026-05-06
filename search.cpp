@@ -5,6 +5,7 @@
 #include "board.h"
 #include "history.h"
 #include "nnue.h"
+#include "movepicker.h"
 
 #include <atomic>
 #include <iostream>
@@ -12,6 +13,7 @@
 #include <chrono>
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 #define MAX_MOVES 256
 #define SEE_THRESHOLD -82
@@ -29,6 +31,8 @@ thread_local long long hard_time_limit_ms   = 0;
 thread_local long long soft_node_limit      = -1;
 thread_local bool      time_limited         = false;
 thread_local int       seldepth             = 0;
+thread_local Move      singularPvTable[MAX_PLY][MAX_PLY];
+thread_local int       singularPvLength[MAX_PLY];
 
 inline void updateSeldepth(int ply) {
     if (ply > seldepth) seldepth = ply;
@@ -243,19 +247,19 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply, SearchStack*
         alpha = stand_pat;
     }
 
-    Move captureMoves[MAX_MOVES];
-    int moveCount = 0;
-    get_capture_moves(board, captureMoves, moveCount);
-    orderMoves(board, captureMoves, moveCount, ttHit ? ttEntry.bestMove : 0, 0);
+    MovePicker mp(board, ttHit ? ttEntry.bestMove : 0, 0, 0, 0, true);
     int bestEval = stand_pat;
     Move bestMove = 0;
+    Move captureMove;
 
-    for (int i = 0; i < moveCount; ++i) {
-        Move captureMove = captureMoves[i];
-        if (!staticExchangeEvaluation(board, captureMove, 0)) {
-            continue; // Bad capture, skip it
-        }
+    while ((captureMove = mp.next_move()) != 0) {
         board.makeMove(captureMove);
+        int kingSq = -1;
+        king_square(board, board.stm == BLACK, kingSq);
+        if (kingSq != -1 && is_square_attacked(board, kingSq, board.stm == WHITE)) {
+            board.unmakeMove(captureMove);
+            continue;
+        }
         
         int eval = -qsearch(board, -beta, -alpha, ply + 1, ss + 1);
         
@@ -292,13 +296,14 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply, SearchStack*
     return bestEval;
 }
 
-int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, SearchStack* ss, std::vector<Move>& pvLine, std::vector<uint64_t>& positionHistory) {
+int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, SearchStack* ss, Move pvTable[][MAX_PLY], int pvLength[], std::vector<uint64_t>& positionHistory) {
     nodeCount++;
 
     const bool rootNode = (ply == 0);
 
     updateSeldepth(ply);
 
+    pvLength[ply] = ply; // Initialize PV length for this ply
     if (should_stop_search()) return 0;
     
     if (depth <= 0) {
@@ -363,24 +368,15 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
 
 
 
-    int moveCount = 0;
-    Move moves[MAX_MOVES];
-    get_all_moves(board, moves, moveCount);
+    MovePicker mp(board, ttMove, killerMoves[ply][0], killerMoves[ply][1], ply);
+    Move bestMove = 0;
 
-    if (moveCount == 0) {
-        int kingSq = -1;
-        king_square(board, board.stm == WHITE, kingSq);
-        if ((kingSq != -1) && is_square_attacked(board, kingSq, board.stm != WHITE)) {
+    if (!mp.has_moves()) {
+        if (inCheck) {
             return -MATE_SCORE + ply;
         }
         return 0; // Stalemate
     }
-
-    int16_t bestEval = -VALUE_INF;
-    bool aborted = false;
-    
-    orderMoves(board, moves, moveCount, ttMove, ply);
-    Move bestMove = 0;
 
     // Reverse Futility Pruning
     if (!rootNode && !ss->singularMove && !inCheck && !pvNode && depth < 9 && beta < MATE_SCORE - 100){
@@ -420,8 +416,8 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         positionHistory.push_back(board.hash);
 
         int R = 3 + (depth / 3);
-        std::vector<Move> nullPv;
-        int16_t nullScore = -negamax(board, depth - R, -beta, -beta + 1, ply + 1, ss + 1, nullPv, positionHistory);
+
+        int16_t nullScore = -negamax(board, depth - R, -beta, -beta + 1, ply + 1, ss + 1, pvTable, pvLength, positionHistory);
         
         positionHistory.pop_back();
 
@@ -430,27 +426,34 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         board.hash = prevHash;
 
         if (nullScore >= beta) {
-            pvLine.clear();
             return beta; // Null-move cutoff
         }
     }
 
+    int16_t bestEval = -VALUE_INF;
+    bool aborted = false;
+    
     Move badQuiets[MAX_MOVES];
     int badQuietCount = 0;
-    for (int movesSearched = 0; movesSearched < moveCount; ++movesSearched) {
+    pvLength[ply] = ply;
+
+    Move chosenMove;
+    int movesSearched = 0;
+
+    while ((chosenMove = mp.next_move()) != 0) {
+
         if (should_stop_search()) {
             aborted = true;
             break;
         }
-        Move chosenMove = moves[movesSearched];
+
+        const int moveIndex = movesSearched++;
 
         if (chosenMove == ss->singularMove) {
             continue;
         }
 
         bool isKiller = (ply < MAX_PLY && is_quiet(chosenMove) && (chosenMove == killerMoves[ply][0] || chosenMove == killerMoves[ply][1]));
-        
-        std::vector<Move> childPv; 
 
         // Singular Extensions
         int extension = 0;
@@ -465,9 +468,9 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
 
             int singularBeta = ttSeScore - depth;
             const int singularDepth = (depth - 1) / 2;
-            std::vector<Move> tmpPv;
+        
             ss->singularMove = chosenMove;
-            int16_t s = negamax(board, singularDepth, singularBeta - 1, singularBeta, ply, ss, tmpPv, positionHistory);
+            int16_t s = negamax(board, singularDepth, singularBeta - 1, singularBeta, ply, ss, singularPvTable, singularPvLength, positionHistory);
             ss->singularMove = 0;
 
             if (s < singularBeta) {
@@ -494,18 +497,18 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         int lmpCount = (3 * depth * depth) + 4;
         // Late Move Pruning (LMP) logic (skip for killer moves)
         if (!rootNode && !pvNode && !isKiller &&
-            movesSearched >= lmpCount && is_quiet(chosenMove)) {
+            moveIndex >= lmpCount && is_quiet(chosenMove)) {
             continue; // skip this move (late move pruning)
         }
         
         // SEE PVS pruning (skip for killer moves)
         int seeThreshold = is_quiet(chosenMove) ? -67 * depth : -32 * depth * depth;
-        if (movesSearched > 0 && !isKiller && !staticExchangeEvaluation(board, chosenMove, seeThreshold)) {
+        if (moveIndex > 0 && !isKiller && !staticExchangeEvaluation(board, chosenMove, seeThreshold)) {
             continue;
         }
 
         // History Pruning
-        if (!rootNode && !pvNode && !inCheck && is_quiet(chosenMove) && movesSearched > 0 && depth <= 4) {
+        if (!rootNode && !pvNode && !inCheck && is_quiet(chosenMove) && moveIndex > 0 && depth <= 4) {
             int from = move_from(chosenMove);
             int to = move_to(chosenMove);
             int piece = board.mailbox[from] - 1;
@@ -518,10 +521,18 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         moveStack[ply] = {board.mailbox[move_from(chosenMove)] - 1, move_to(chosenMove)};
         board.makeMove(chosenMove);
 
+        // Legality check
+        int kSq = -1;
+        king_square(board, board.stm == BLACK, kSq);
+        if (kSq != -1 && is_square_attacked(board, kSq, board.stm == WHITE)) {
+            board.unmakeMove(chosenMove);
+            continue;
+        }
+
         positionHistory.push_back(board.hash); // Add new position to history for repetition detection
         const int fullDepth = depth - 1 + extension;
         if (firstMove){
-            eval = -negamax(board, fullDepth, -beta, -alpha, ply + 1, ss + 1, childPv, positionHistory);
+            eval = -negamax(board, fullDepth, -beta, -alpha, ply + 1, ss + 1, pvTable, pvLength, positionHistory);
             firstMove = false;
         } else {
 
@@ -529,7 +540,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
 
             if (depth > 1 && is_quiet(chosenMove)) {
                 int lmrTableDepth = std::min(depth, 255);
-                int lmrTableMovesSearched = std::min(movesSearched, 255);
+                int lmrTableMovesSearched = std::min(moveIndex, 255);
                 reduction = LMR_TABLE[lmrTableDepth][lmrTableMovesSearched]; // Increase reduction with depth
                 if (isKiller) reduction--; // Reduce killer moves less
                 if (reduction < 0) reduction = 0;
@@ -540,17 +551,15 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
             int lmrDepth = std::max(0, fullDepth - reduction);
 
 
-            eval = -negamax(board, lmrDepth, -alpha - 1, -alpha, ply + 1, ss + 1, childPv, positionHistory); // PVS null window search
+            eval = -negamax(board, lmrDepth, -alpha - 1, -alpha, ply + 1, ss + 1, pvTable, pvLength, positionHistory); // PVS null window search
             
             if (reduction > 0 && eval > alpha) {
                 // if the eval suggest a better move we research
-                childPv.clear();
-                eval = -negamax(board, fullDepth, -alpha - 1, -alpha, ply + 1, ss + 1, childPv, positionHistory); // Re-search with no reduction
+                eval = -negamax(board, fullDepth, -alpha - 1, -alpha, ply + 1, ss + 1, pvTable, pvLength, positionHistory); // Re-search with no reduction
             }
             if (eval > alpha && eval < beta) {
                 // if we fail high search again with no reduction, and window
-                childPv.clear();
-                eval = -negamax(board, fullDepth, -beta, -alpha, ply + 1, ss + 1, childPv, positionHistory); // Re-search if we failed high
+                eval = -negamax(board, fullDepth, -beta, -alpha, ply + 1, ss + 1, pvTable, pvLength, positionHistory); // Re-search if we failed high
             }
         }
         if (!positionHistory.empty()) positionHistory.pop_back();
@@ -568,9 +577,13 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         if (eval > alpha) { 
             alpha = eval;
             bestMove = chosenMove;
-            pvLine.clear();
-            pvLine.push_back(chosenMove);
-            pvLine.insert(pvLine.end(), childPv.begin(), childPv.end());
+            pvTable[ply][ply] = chosenMove;
+            
+            for (int j = ply + 1; j < pvLength[ply + 1]; j++) {
+                pvTable[ply][j] = pvTable[ply + 1][j];
+            }
+
+            pvLength[ply] = pvLength[ply + 1];
         }
 
         if (alpha >= beta) {
@@ -587,6 +600,13 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
                 badQuiets[badQuietCount++] = chosenMove;
             }
         }
+    }
+
+    if (movesSearched == 0) {
+        if (inCheck) {
+            return -MATE_SCORE + ply;
+        }
+        return 0; // Stalemate
     }
 
     if (aborted) {
@@ -621,6 +641,10 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
 
     SearchStack ss[MAX_PLY + 8] = {};
 
+    Move pvTable[MAX_PLY][MAX_PLY];
+    int pvLength[MAX_PLY];
+    memset(pvLength, 0, sizeof(pvLength));
+
     std::vector<uint64_t> searchHistory = positionHistory;
 
     reset_movestack();
@@ -632,7 +656,6 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
     start_time_ms = searchStartMs;
     if (movetimeMs > 0) {
         long long safeTime = movetimeMs;
-        if (safeTime > 50) safeTime -= 20;
         long long softTime = (safeTime * 7) / 10;
         if (softTime < 1) softTime = 1;
         soft_time_limit_ms = softTime;
@@ -650,29 +673,29 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
     if (moveCount == 0) return 0;
     Move bestMoveSoFar = moves[0];
 
+    // for smart time management
+    int bestMoveStableDepths = 0;
+    Move lastIterationBestMove = 0;
+    double tmMultiplier = 1.0;
+
     // Iterative Deepening
     for(int iterativeDepth = 1; iterativeDepth <= maxDepth; ++iterativeDepth) {
         resetSeldepth();
-
-        if (iterativeDepth > 1 && soft_limit_reached()) {
-            stop_search_local = true;
-            break;
-        }
+        
         if (should_stop_search()) break;
         
         int16_t alpha = -VALUE_INF;
         int16_t beta = VALUE_INF;
         int delta = 9;
         const bool useAspiration = (iterativeDepth >= 4);
-        std::vector<Move> pvLine;
+
         if (useAspiration) {
             alpha = std::max<int16_t>(alpha, static_cast<int16_t>(score - delta));
             beta = std::min<int16_t>(beta, static_cast<int16_t>(score + delta));
         }
 
         while (true) {
-            pvLine.clear();
-            int16_t searchScore = negamax(board, iterativeDepth, alpha, beta, ply, ss, pvLine, searchHistory);
+            int16_t searchScore = negamax(board, iterativeDepth, alpha, beta, ply, ss, pvTable, pvLength, searchHistory);
 
             if (should_stop_search()) {
                 break;
@@ -703,8 +726,8 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
             break;
         }
 
-        if (!pvLine.empty()) {
-            bestMoveSoFar = pvLine[0];
+        if (pvLength[0] > 0) {
+            bestMoveSoFar = pvTable[0][0];
         }
 
         long long elapsedMs = now_ms() - searchStartMs;
@@ -722,16 +745,51 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
                       << " score cp " << score
                       << " pv ";
 
-            for (Move m : pvLine) {
-                std::cout << move_to_uci(m) << " ";
+            for (int i = 0; i < pvLength[0]; i++) {
+                std::cout << move_to_uci(pvTable[0][i]) << " ";
             }
             std::cout << std::endl;
         }
 
-        if (soft_limit_reached()) {
+        if (pvLength[0] > 0 && iterativeDepth > 1) {
+            Move currentBestMove = pvTable[0][0];
+            
+            // Move stability check
+            if (currentBestMove == lastIterationBestMove) {
+                bestMoveStableDepths++;
+            } else {
+                bestMoveStableDepths = 0; // 0 = Best move has changed
+            }
+
+            // define the tm multiplier
+            tmMultiplier = 1.0;
+            if (bestMoveStableDepths >= 3) {
+                tmMultiplier *= 0.6; // move is stable. so use %60 
+            }
+
+            lastIterationBestMove = currentBestMove;
+        }
+
+        // dynamic soft limit calculation
+        elapsedMs = now_ms() - searchStartMs;
+        if (elapsedMs < 0) elapsedMs = 0;
+        
+        long long adjustedSoftTime = (long long)(soft_time_limit_ms * tmMultiplier);
+        
+        long long maxSafeTime = hard_time_limit_ms - 20;
+        if (maxSafeTime < 1) maxSafeTime = 1;
+
+        if (adjustedSoftTime > maxSafeTime) {
+            adjustedSoftTime = maxSafeTime; 
+        }
+
+        // stop searching
+        if (time_limited && iterativeDepth >= 3 && elapsedMs >= adjustedSoftTime) {
             stop_search_local = true;
             break;
         }
+
+
 
         if (soft_node_limit_reached()) {
             stop_search_local = true;

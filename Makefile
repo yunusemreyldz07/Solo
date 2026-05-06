@@ -4,7 +4,6 @@ STRIP := strip
 
 ifeq ($(OS),Windows_NT)
     EXE ?= Solo.exe
-    # -link esnasında debug symbolleri otomatik silsin diye -s eklendi
     LINKER := -static -static-libgcc -static-libstdc++ -s
 else
     EXE ?= Solo
@@ -16,6 +15,7 @@ SOURCES := main.cpp \
            uci.cpp \
            board.cpp \
            movegen.cpp \
+           movepicker.cpp \
            search.cpp \
            evaluation.cpp \
            bitboard.cpp \
