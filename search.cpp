@@ -417,7 +417,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         moveStack[ply] = {-1, -1}; // Sentinel for null move
         positionHistory.push_back(board.hash);
 
-        int R = 3 + (depth / 3);
+        int R = 3 + (depth / 3) + !improving;
 
         int16_t nullScore = -negamax(board, depth - R, -beta, -beta + 1, ply + 1, ss + 1, pvTable, pvLength, positionHistory);
         
