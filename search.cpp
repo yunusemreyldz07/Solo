@@ -318,7 +318,8 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
     bool firstMove = true; // for PVS
     int16_t eval = 0; 
 
-    const int16_t staticEval = evaluate_board(board);
+    int16_t rawEval = evaluate_board(board);
+    int16_t staticEval = rawEval;
     ss->staticEval = staticEval;
     ss->cutOffCount = 0;  // Initialize cutoff counter for this node
     const bool pvNode = (beta - alpha > 1);
@@ -360,6 +361,17 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
                 return ttScore;
             }
         
+        }
+    }
+
+    // TT score can refine our static eval estimate
+    if (ttHit && !inCheck) {
+        int16_t ttScore = ttEntry.score;
+        if (ttEntry.flag == TT_EXACT ||
+            (ttEntry.flag == TT_ALPHA && ttScore >= staticEval) ||
+            (ttEntry.flag == TT_BETA && ttScore <= staticEval)) {
+            staticEval = ttScore;
+            ss->staticEval = staticEval;
         }
     }
 
