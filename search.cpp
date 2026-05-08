@@ -496,7 +496,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
 
         }
 
-        int lmpCount = (3 * depth * depth) + 4;
+        int lmpCount = (3 * depth * depth + 4) / (2 - improving);
         // Late Move Pruning (LMP) logic (skip for killer moves)
         if (!rootNode && !pvNode && !isKiller &&
             moveIndex >= lmpCount && is_quiet(chosenMove)) {
