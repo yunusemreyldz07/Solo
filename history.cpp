@@ -45,7 +45,7 @@ int get_conhist_score(int piece, int to, int ply) {
 
 void update_history(const Board& board, int color, int fromSq, int toSq, int depth, const Move badQuiets[256], const int& badQuietCount, int ply) { 
 
-    int bonus = std::min(10 + 200 * depth, 4096);
+    int bonus = std::min(16 * depth * depth + 32 * depth, 2048);
 
     // Main history update for best move
     int& bestScore = historyTable[color][fromSq][toSq];
