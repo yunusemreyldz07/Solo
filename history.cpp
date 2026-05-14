@@ -48,24 +48,22 @@ int get_conhist_score(int piece, int to, int ply) {
 
 void update_capthist(const Board& board, const Move& move, const int depth){
 
-    int piece = board.mailbox[move_from(move)];
+    int piece = board.mailbox[move_from(move)] - 1 ;
 
     int to = move_to(move);
 
-    int capturedPiece = board.mailbox[move_to(move)] ? board.mailbox[move_to(move)] : PAWN;
+    int capturedPiece = (board.mailbox[move_to(move)] ? board.mailbox[move_to(move)] : (board.stm == WHITE ? B_PAWN : W_PAWN)) - 1;
 
+    int bonus = std::min(10 + 200 * depth, 4096);
     int& score = captureTable[piece][to][capturedPiece];
 
     score += std::min(10 + 200 * depth, 4096) - (score * std::abs(std::min(10 + 200 * depth, 4096))) / HISTORY_MAX; 
 }
 
 int get_capthist(const Board& board, const Move& move){
-
-    int piece = board.mailbox[move_from(move)];
-
+    int piece = board.mailbox[move_from(move)] - 1;
     int to = move_to(move);
-
-    int capturedPiece = board.mailbox[move_to(move)] ? board.mailbox[move_to(move)] : PAWN;
+    int capturedPiece = (board.mailbox[move_to(move)] ? board.mailbox[move_to(move)] : (board.stm == WHITE ? B_PAWN : W_PAWN)) - 1;
     
     return captureTable[piece][to][capturedPiece];
 }
