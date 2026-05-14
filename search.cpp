@@ -148,68 +148,7 @@ void requestSearchStop() {
     stop_search_global.store(true, std::memory_order_relaxed);
 }
 
-int scoreMove(Board& board, const Move& move, Move ttMove = 0, int ply = 0) {
-    int score = 0;
-    int from = move_from(move);
-    int to = move_to(move);
-    int piece = piece_at_sq(board, from);
-    int flags = move_flags(move);
 
-    if (is_capture(move)) {
-        int victimPiece = flags == FLAG_EN_PASSANT ? PAWN : piece_type(board.mailbox[to]);
-        int victimValue = PIECE_VALUES[victimPiece];
-
-        int attackerPiece = piece_at_sq(board, from);
-        int attackerValue = PIECE_VALUES[piece_type(attackerPiece)];
-        int mvvScore = victimValue * 10 - attackerValue;
-
-        if (staticExchangeEvaluation(board, move, SEE_THRESHOLD)) {
-            mvvScore += SCORE_GOOD_CAPTURE;
-        } else {
-            mvvScore += SCORE_BAD_CAPTURE;
-        }
-
-        score += mvvScore;
-    }
-
-    if (ttMove != 0 && move == ttMove) {
-        score += SCORE_TT_MOVE;
-    }
-
-    if (is_quiet(move)) {
-        // Killer move bonus (only for quiet moves)
-        if (ply < MAX_PLY && move == killerMoves[ply][0]) {
-            score += SCORE_KILLER_1;
-        } else if (ply < MAX_PLY && move == killerMoves[ply][1]) {
-            score += SCORE_KILLER_2;
-        } else {
-            score += get_history_score(board.stm, from, to);
-            score += get_conhist_score(piece - 1, to, ply);
-        }
-    }
-
-    return score;
-}
-
-void orderMoves(Board& board, Move* moves, int moveCount, Move ttMove = 0, int ply = 0) {
-    int scores[MAX_MOVES];
-    for (int i = 0; i < moveCount; i++) {
-        scores[i] = scoreMove(board, moves[i], ttMove, ply);
-    }
-    // Insertion sort with pre-computed scores
-    for (int i = 1; i < moveCount; i++) {
-        int tmpScore = scores[i];
-        Move tmpMove = moves[i];
-        int j = i - 1;
-        while (j >= 0 && scores[j] < tmpScore) {
-            scores[j + 1] = scores[j];
-            moves[j + 1] = moves[j];
-            j--;
-        }
-        scores[j + 1] = tmpScore;
-        moves[j + 1] = tmpMove;
-    }
-}
 
 int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply, SearchStack* ss) {
     if (should_stop_search()) return 0;
@@ -593,6 +532,12 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
             if (is_quiet(chosenMove)){
                 update_history(board, board.stm, move_from(chosenMove), move_to(chosenMove), depth, badQuiets, badQuietCount, ply);
                 updateKillers(ply, chosenMove);
+            } else {
+                // If not quiet, then noisy
+                // We gotta make sure it is a capture though, for capture history at least
+                if (is_capture(chosenMove)){
+                    update_capthist(board, chosenMove, depth);
+                }
             }
             break; // Beta cutoff
         }

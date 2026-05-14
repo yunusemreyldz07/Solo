@@ -46,6 +46,10 @@ int MovePicker::score_move(Move move) const {
             score += get_history_score(board.stm, from, to);
             score += get_conhist_score(piece - 1, to, ply);
         }
+    } else {
+        if (is_capture(move)){
+            score += get_capthist(board, move);
+        }
     }
 
     return score;
@@ -68,6 +72,10 @@ void MovePicker::score_captures() {
 
         if (ttMove != 0 && move == ttMove) {
             score += SCORE_TT_MOVE;
+        }
+
+        if (is_capture(move)){
+            score += get_capthist(board, move);
         }
 
         scores[i] = score;

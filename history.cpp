@@ -4,12 +4,15 @@
 
 int historyTable[2][64][64]; // color x fromSquare x toSquare
 int conhistTable[12][64][12][64]; // [prevPiece][prevTo][currPiece][currTo]
+int captureTable[12][64][12]; // piece x to x capturedpiece
+
 thread_local MoveInfo moveStack[MAX_PLY];
 constexpr int HISTORY_MAX = 16384;
 
 void clear_history() {
     std::memset(historyTable, 0, sizeof(historyTable));
     std::memset(conhistTable, 0, sizeof(conhistTable));
+    std::memset(captureTable, 0, sizeof(captureTable));
 }
 
 void reset_movestack() {
@@ -41,6 +44,30 @@ int get_conhist_score(int piece, int to, int ply) {
         }
     }
     return score;
+}
+
+void update_capthist(const Board& board, const Move& move, const int depth){
+
+    int piece = board.mailbox[move_from(move)];
+
+    int to = move_to(move);
+
+    int capturedPiece = board.mailbox[move_to(move)] ? board.mailbox[move_to(move)] : PAWN;
+
+    int& score = captureTable[piece][to][capturedPiece];
+
+    score += std::min(10 + 200 * depth, 4096) - (score * std::abs(std::min(10 + 200 * depth, 4096))) / HISTORY_MAX; 
+}
+
+int get_capthist(const Board& board, const Move& move){
+
+    int piece = board.mailbox[move_from(move)];
+
+    int to = move_to(move);
+
+    int capturedPiece = board.mailbox[move_to(move)] ? board.mailbox[move_to(move)] : PAWN;
+    
+    return captureTable[piece][to][capturedPiece];
 }
 
 void update_history(const Board& board, int color, int fromSq, int toSq, int depth, const Move badQuiets[256], const int& badQuietCount, int ply) { 
