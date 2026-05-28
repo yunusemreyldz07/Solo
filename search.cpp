@@ -429,6 +429,15 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
 
         int R = 3 + (depth / 3);
 
+        int evalDelta = (staticEval - beta) / 300; // may be negative
+        if (evalDelta < 0) evalDelta = 0;          // never decrease R
+        if (evalDelta > 3) evalDelta = 3;          // cap the bonus
+        R += evalDelta;
+
+        // Keep R within safe bounds
+        if (R < 1) R = 3;
+        if (R > depth - 1) R = std::max(1, depth - 1);
+
         int16_t nullScore = -negamax(board, depth - R, -beta, -beta + 1, ply + 1, ss + 1, pvTable, pvLength, positionHistory);
         
         positionHistory.pop_back();
