@@ -411,7 +411,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
     }
 
     // Null Move Pruning
-    if (!rootNode && !ss->singularMove && !inCheck && depth >= 3 && !pvNode && ttAdjustedEval >= beta) {
+    if (!rootNode && !ss->singularMove && !ss->skipNullMove && !inCheck && depth >= 3 && !pvNode && ttAdjustedEval >= beta) {
         const int prevEnPassant = board.enPassant;
         const uint64_t prevHash = board.hash;
 
@@ -438,7 +438,24 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         board.hash = prevHash;
 
         if (nullScore >= beta) {
-            return beta; // Null-move cutoff
+            // Verification search to avoid zugzwang pitfalls
+            if (depth >= 6) {
+                const bool prevSkipNull = ss->skipNullMove;
+                ss->skipNullMove = true;
+
+                int verifyDepth = depth - R;
+                if (verifyDepth < 1) verifyDepth = 1;
+
+                int16_t verifyScore = negamax(board, verifyDepth, static_cast<int16_t>(beta - 1), beta, ply, ss, pvTable, pvLength, positionHistory);
+
+                ss->skipNullMove = prevSkipNull;
+
+                if (verifyScore >= beta) {
+                    return beta;
+                }
+            } else {
+                return beta; // Null move cutoff
+            }
         }
     }
 
