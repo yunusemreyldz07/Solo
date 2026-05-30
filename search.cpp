@@ -506,6 +506,11 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
                 extension = 1;
             }
 
+            // Double ext
+            if (!pvNode && s <= singularBeta - 40){
+                extension = 2;
+            }
+
             // Multicut
             else if (singularBeta >= beta) {
                 return singularBeta;
