@@ -253,6 +253,11 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply, SearchStack*
     Move captureMove;
 
     while ((captureMove = mp.next_move()) != 0) {
+
+        if (!staticExchangeEvaluation(board, captureMove, 0)) {
+            continue;
+        }
+
         board.makeMove(captureMove);
         int kingSq = -1;
         king_square(board, board.stm == BLACK, kingSq);
