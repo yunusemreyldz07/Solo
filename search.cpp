@@ -507,7 +507,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
             }
 
             // Double ext
-            if (!pvNode && s <= singularBeta - 40){
+            if (!pvNode && s <= singularBeta - 20){
                 extension = 2;
             }
 
