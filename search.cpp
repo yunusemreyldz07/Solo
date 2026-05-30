@@ -495,7 +495,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
                 ttSeScore += ply;
             }
 
-            int singularBeta = ttSeScore - depth;
+            int singularBeta = ttSeScore - depth*4;
             const int singularDepth = (depth - 1) / 2;
         
             ss->singularMove = chosenMove;
