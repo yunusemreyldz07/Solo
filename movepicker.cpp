@@ -1,54 +1,12 @@
 #include "movepicker.h"
 
-static const int PIECE_VALUES_MP[7] = {0, 100, 320, 330, 500, 900, 20000};
+// SEE threshold for capture scoring in move ordering (not QS pruning — TODO: move QS SEE pruning into qsearch)
 static constexpr int MP_SEE_THRESHOLD = -82;
 
 MovePicker::MovePicker(Board& b, Move tt, Move k1, Move k2, int p, bool qsearch)
     : board(b), ttMove(tt), ply(p), stage(STAGE_TT), moveCount(0), badCaptureCount(0), currentMoveIndex(0), isQSearch(qsearch) {
     killers[0] = k1;
     killers[1] = k2;
-}
-
-int MovePicker::score_move(Move move) const {
-    int score = 0;
-    int from = move_from(move);
-    int to = move_to(move);
-    int piece = piece_at_sq(board, from);
-    int flags = move_flags(move);
-
-    if (is_capture(move)) {
-        int victimPiece = flags == FLAG_EN_PASSANT ? PAWN : piece_type(board.mailbox[to]);
-        int victimValue = PIECE_VALUES_MP[victimPiece];
-
-        int attackerPiece = piece_at_sq(board, from);
-        int attackerValue = PIECE_VALUES_MP[piece_type(attackerPiece)];
-        int mvvScore = victimValue * 10 - attackerValue;
-
-        if (staticExchangeEvaluation(board, move, MP_SEE_THRESHOLD)) {
-            mvvScore += SCORE_GOOD_CAPTURE;
-        } else {
-            mvvScore += SCORE_BAD_CAPTURE;
-        }
-
-        score += mvvScore;
-    }
-
-    if (ttMove != 0 && move == ttMove) {
-        score += SCORE_TT_MOVE;
-    }
-
-    if (is_quiet(move)) {
-        if (ply < MAX_PLY && move == killers[0]) {
-            score += SCORE_KILLER_1;
-        } else if (ply < MAX_PLY && move == killers[1]) {
-            score += SCORE_KILLER_2;
-        } else {
-            score += get_history_score(board.stm, from, to);
-            score += get_conhist_score(piece - 1, to, ply);
-        }
-    }
-
-    return score;
 }
 
 void MovePicker::score_captures() {
@@ -61,8 +19,7 @@ void MovePicker::score_captures() {
         int victimPiece = flags == FLAG_EN_PASSANT ? PAWN : piece_type(board.mailbox[to]);
         int victimValue = PIECE_VALUES_MP[victimPiece];
 
-        int attackerPiece = piece_at_sq(board, from);
-        int attackerValue = PIECE_VALUES_MP[piece_type(attackerPiece)];
+        int attackerValue = PIECE_VALUES_MP[piece_type(piece_at_sq(board, from))];
 
         int score = victimValue * 10 - attackerValue;
 
@@ -102,17 +59,17 @@ void MovePicker::score_quiets() {
 
 Move MovePicker::next_scored_move() {
     if (currentMoveIndex >= moveCount) return 0;
-    
+
     int bestScore = -9999999;
     int bestIndex = currentMoveIndex;
-    
+
     for (int i = currentMoveIndex; i < moveCount; i++) {
         if (scores[i] > bestScore) {
             bestScore = scores[i];
             bestIndex = i;
         }
     }
-    
+
     Move bestMove = moves[bestIndex];
     int score = scores[bestIndex];
 
@@ -123,7 +80,7 @@ Move MovePicker::next_scored_move() {
 
     moves[currentMoveIndex] = bestMove;
     scores[currentMoveIndex] = score;
-    
+
     currentMoveIndex++;
     return bestMove;
 }
@@ -176,6 +133,8 @@ Move MovePicker::next_move() {
                 Move move = next_scored_move();
                 if (move != 0) {
                     if (move == ttMove) continue;
+                    // TODO: SEE(move, 0) burada QS pruning amacıyla kullanılıyor;
+                    // bu mantık search.cpp'deki qsearch'e taşınmalı
                     if (!staticExchangeEvaluation(board, move, 0)) {
                         if (badCaptureCount < 256) {
                             badCaptures[badCaptureCount++] = move;
@@ -222,7 +181,6 @@ Move MovePicker::next_move() {
             case STAGE_BAD_NOISY:
                 if (currentMoveIndex < badCaptureCount) {
                     Move move = badCaptures[currentMoveIndex++];
-                    // TT move shouldn't be in badCaptures if we skipped it above, but just in case
                     if (move == ttMove) continue;
                     if (!is_legal(move)) {
                         continue;

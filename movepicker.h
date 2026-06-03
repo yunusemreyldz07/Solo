@@ -3,7 +3,21 @@
 
 #include "board.h"
 #include "history.h"
-#include "evaluation.h" // for staticExchangeEvaluation
+#include "evaluation.h"
+
+// Move ordering scores
+inline constexpr int SCORE_TT_MOVE      = 1000000;
+inline constexpr int SCORE_GOOD_CAPTURE = 1000000;
+inline constexpr int SCORE_KILLER_1     = 900000;
+inline constexpr int SCORE_KILLER_2     = 800000;
+inline constexpr int SCORE_BAD_CAPTURE  = -100000;
+inline constexpr int SCORE_PROMO_QUEEN  = 90000;
+inline constexpr int SCORE_PROMO_ROOK   = 80000;
+inline constexpr int SCORE_PROMO_BISHOP = -70000;
+inline constexpr int SCORE_PROMO_KNIGHT = -60000;
+
+// Piece values used for MVV-LVA scoring
+inline constexpr int PIECE_VALUES_MP[7] = {0, 100, 320, 330, 500, 900, 20000};
 
 enum Stage {
     STAGE_TT,
@@ -21,9 +35,9 @@ private:
     Move ttMove;
     Move killers[2];
     int ply;
-    
+
     Stage stage;
-    
+
     Move moves[256];
     int scores[256];
     Move badCaptures[256];
@@ -33,7 +47,6 @@ private:
 
     bool isQSearch;
 
-    int score_move(Move move) const;
     void score_captures();
     void score_quiets();
     Move next_scored_move();
