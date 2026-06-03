@@ -19,6 +19,8 @@
 
 TranspositionTable ttTable;
 
+char columns[] = "abcdefgh";
+
 struct UciTimeParams {
     int wtime = -1;
     int btime = -1;
