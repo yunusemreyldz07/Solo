@@ -10,6 +10,7 @@ void requestSearchStop();
 
 struct SearchStack {
     Move singularMove;
+    bool skipNullMove;
     int cutOffCount;
     int16_t staticEval;
 };

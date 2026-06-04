@@ -19,6 +19,8 @@
 
 TranspositionTable ttTable;
 
+char columns[] = "abcdefgh";
+
 struct UciTimeParams {
     int wtime = -1;
     int btime = -1;
@@ -279,12 +281,14 @@ int handle_uci_commands(int argc, char* argv[]){
                 int mb = std::max(1, std::stoi(value));
                 ttTable.resize(mb);
                 ttTable.clear();
+                std::cout << "info string set Hash to " << mb << " MB, entries " << ttTable.count() << std::endl;
             } else if (name == "Use_NNUE") {
                 USE_NNUE = (value == "true");
                 if (USE_NNUE) {
                     board.accValid[0] = true;
                     RefreshAccumulator(board, &board.accStack[0][0], &board.accStack[0][1]);
                 }
+                std::cout << "info string set Use_NNUE to " << (USE_NNUE ? "true" : "false") << std::endl;
             }
 
         }
@@ -314,11 +318,7 @@ int handle_uci_commands(int argc, char* argv[]){
 
         else if (line.substr(0, 8) == "position") {
             stop_and_join_search();
-            if (line.find("startpos") != std::string::npos) {
-                board.reset();
-                clear_history();
-            }
-            else if (line.find("fen") != std::string::npos) {
+            if (line.find("fen") != std::string::npos) {
                 size_t fenStart = line.find("fen") + 4;
                 size_t movesPos = line.find("moves");
                 std::string fenStr;
@@ -329,9 +329,11 @@ int handle_uci_commands(int argc, char* argv[]){
                 }
                 board.loadFEN(fenStr);
             }
+            else {
+                board.reset();
+            }
             gameHistory.clear();
             gameHistory.push_back(position_key(board));
-            clear_history();
             
             size_t movesPos = line.find("moves");
             if (movesPos != std::string::npos) {

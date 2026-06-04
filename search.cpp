@@ -331,6 +331,8 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         depth++; // Check extension
     }
 
+    const bool improving = !inCheck && ply >= 2 && staticEval > (ss-2)->staticEval;
+
     int16_t originalAlpha = alpha;
     uint64_t hashKey = board.hash; 
     TTEntry& ttEntry = ttTable.getEntry(hashKey);
@@ -378,10 +380,20 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         return 0; // Stalemate
     }
 
+    int ttAdjustedEval = staticEval;
+
+    if (!ss->singularMove && ttMove && !inCheck &&
+        (ttEntry.flag == TT_EXACT ||
+         (ttEntry.flag == TT_ALPHA && ttEntry.score >= staticEval) ||
+         (ttEntry.flag == TT_BETA && ttEntry.score <= staticEval))) {
+
+        ttAdjustedEval = ttEntry.score;
+    }
+
     // Reverse Futility Pruning
     if (!rootNode && !ss->singularMove && !inCheck && !pvNode && depth < 9 && beta < MATE_SCORE - 100){
 
-        int margin = 80 * depth;
+        int margin = 80 * (depth - improving);
 
         if (staticEval - margin >= beta) {
             // I am so far ahead that even if I reduce my score by the margin, I am still above beta. No need to search this node.
@@ -399,7 +411,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
     }
 
     // Null Move Pruning
-    if (!rootNode && !ss->singularMove && !inCheck && depth >= 3 && !pvNode) {
+    if (!rootNode && !ss->singularMove && !ss->skipNullMove && !inCheck && depth >= 3 && !pvNode && ttAdjustedEval >= beta) {
         const int prevEnPassant = board.enPassant;
         const uint64_t prevHash = board.hash;
 
@@ -426,7 +438,24 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         board.hash = prevHash;
 
         if (nullScore >= beta) {
-            return beta; // Null-move cutoff
+            // Verification search to avoid zugzwang pitfalls
+            if (depth >= 6) {
+                const bool prevSkipNull = ss->skipNullMove;
+                ss->skipNullMove = true;
+
+                int verifyDepth = depth - R;
+                if (verifyDepth < 1) verifyDepth = 1;
+
+                int16_t verifyScore = negamax(board, verifyDepth, static_cast<int16_t>(beta - 1), beta, ply, ss, pvTable, pvLength, positionHistory);
+
+                ss->skipNullMove = prevSkipNull;
+
+                if (verifyScore >= beta) {
+                    return beta;
+                }
+            } else {
+                return beta; // Null move cutoff
+            }
         }
     }
 
@@ -481,6 +510,11 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
             else if (singularBeta >= beta) {
                 return singularBeta;
             }
+
+            // Negative Extensions
+            else if (ttEntry.score >= beta) {
+                extension = -1;
+            }
         }
 
 
@@ -494,7 +528,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
 
         }
 
-        int lmpCount = (3 * depth * depth) + 4;
+        int lmpCount = (3 * depth * depth + 4) / (2 - improving);
         // Late Move Pruning (LMP) logic (skip for killer moves)
         if (!rootNode && !pvNode && !isKiller &&
             moveIndex >= lmpCount && is_quiet(chosenMove)) {
@@ -737,14 +771,23 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
         
         
         if (!silent) {
-            std::cout << "info depth " << iterativeDepth
-                      << " seldepth " << getSeldepth()
-                      << " hashfull " << hash_full()
-                      << " time " << elapsedMs
-                      << " nps " << nps
-                      << " score cp " << score
-                      << " pv ";
-
+            if (score <= MATE_SCORE - MAX_PLY) {
+                std::cout << "info depth " << iterativeDepth
+                          << " seldepth " << getSeldepth()
+                          << " hashfull " << hash_full()
+                          << " time " << elapsedMs
+                          << " nps " << nps
+                          << " score cp " << score
+                          << " pv ";
+            } else {
+                std::cout << "info depth " << iterativeDepth
+                          << " seldepth " << getSeldepth()
+                          << " hashfull " << hash_full()
+                          << " time " << elapsedMs
+                          << " nps " << nps
+                          << " score mate " << (MATE_SCORE - score + 1) / 2
+                          << " pv ";
+            }
             for (int i = 0; i < pvLength[0]; i++) {
                 std::cout << move_to_uci(pvTable[0][i]) << " ";
             }

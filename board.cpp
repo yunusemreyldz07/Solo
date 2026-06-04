@@ -8,8 +8,6 @@
 #include <cstring> // for memcpy
 #include <cstdio> // for snprintf
 
-char columns[] = "abcdefgh";
-
 #define MAX_GAME_PLY 2048
 
 namespace {
@@ -28,6 +26,9 @@ constexpr Bitboard START_B_BISHOPS = 0x2400000000000000ULL;
 constexpr Bitboard START_B_ROOKS   = 0x8100000000000000ULL;
 constexpr Bitboard START_B_QUEEN   = 0x0800000000000000ULL;
 constexpr Bitboard START_B_KING    = 0x1000000000000000ULL;
+
+
+// Board and bitboard helpers
 
 inline Bitboard bit_at_sq(int sq) {
     return 1ULL << sq;
@@ -92,6 +93,22 @@ inline bool is_pawn_attack_possible(const Board& board, bool attackerIsWhite, in
     }
     return (pawn_attacks[WHITE][epSq] & pawns) != 0;
 }
+
+inline void remove_piece(Board& board, int piece, int sq) {
+    bb_clear(board, piece, sq);
+    board.mailbox[sq] = 0;
+}
+
+inline void add_piece(Board& board, int piece, int sq) {
+    bb_set(board, piece, sq);
+    board.mailbox[sq] = piece;
+}
+
+inline void move_piece(Board& board, int piece, int fromSq, int toSq) {
+    remove_piece(board, piece, fromSq);
+    add_piece(board, piece, toSq);
+}
+
 } // namespace
 
 Board::Board() {
@@ -119,9 +136,9 @@ void Board::reset() {
 }
 
 void Board::makeMove(Move move) {
-    int from = move & 0x3F;               // First 6 bit
-    int to = (move >> 6) & 0x3F;          // Other 6 bit
-    int flags = (move >> 12) & 0xF;       // Last 4 bits
+    int from = move_from(move);
+    int to = move_to(move);
+    int flags = move_flags(move);
     int promo = get_promotion_type(move); // KNIGHT/BISHOP/ROOK/QUEEN or -1 if no promotion
     const Zobrist& z = zobrist();
 
@@ -131,17 +148,22 @@ void Board::makeMove(Move move) {
     st.enPassant = enPassant;
     st.halfMoveClock = halfMoveClock;
 
-    if (flags == 5) { // En passant capture 
+    const int fromSq = from;
+    const int toSq = to;
+    const int8_t movingPiece = mailbox[fromSq];
+    int target_piece = mailbox[toSq];
+    const bool isEnPassant = flags == FLAG_EN_PASSANT;
+    const bool isPromotion = promo != -1;
+    const bool isCastle = piece_type(movingPiece) == KING &&
+                          std::abs(sq_to_col(fromSq) - sq_to_col(toSq)) == 2;
+    const bool isDoublePawnPush = piece_type(movingPiece) == PAWN &&
+                                  std::abs(sq_to_row(fromSq) - sq_to_row(toSq)) == 2;
+
+    if (isEnPassant) {
         st.capturedPiece = (stm == 0) ? (PAWN + 6) : PAWN; 
     } else {
         st.capturedPiece = mailbox[to]; 
     }
-
-    const int fromSq = move_from(move);
-    const int toSq = move_to(move);
-    const int8_t movingPiece = mailbox[fromSq];
-    int target_piece = mailbox[toSq];
-
 
     // Update 50-move clock: reset on pawn move or capture, otherwise increment
     if (piece_type(movingPiece) == PAWN || target_piece != 0) {
@@ -156,9 +178,6 @@ void Board::makeMove(Move move) {
         int wFrom, bFrom, wTo, bTo;
         featureIndices(movingPiece, fromSq, wFrom, bFrom);
         featureIndices(movingPiece, toSq,   wTo,   bTo);
-
-        const bool isCastle = piece_type(movingPiece) == KING &&
-                              std::abs(sq_to_col(fromSq) - sq_to_col(toSq)) == 2;
 
         if (isCastle) {
             // Castling
@@ -180,7 +199,7 @@ void Board::makeMove(Move move) {
             dirty.wSub[0] = (int16_t)wFrom; dirty.wSub[1] = (int16_t)wRookFrom;
             dirty.bAdd[0] = (int16_t)bTo; dirty.bAdd[1] = (int16_t)bRookTo;
             dirty.bSub[0] = (int16_t)bFrom; dirty.bSub[1] = (int16_t)bRookFrom;
-        } else if (promo != -1) {
+        } else if (isPromotion) {
             // Promotion
             int placedPiece = make_piece(promo, piece_color(movingPiece));
             int wPromoTo, bPromoTo;
@@ -204,7 +223,7 @@ void Board::makeMove(Move move) {
         } else if (st.capturedPiece != EMPTY) {
             // Capture (including en passant)
             int cap_sq = toSq;
-            if (flags == FLAG_EN_PASSANT) {
+            if (isEnPassant) {
                 cap_sq = (stm == WHITE) ? toSq - 8 : toSq + 8;
             }
             int wCap, bCap;
@@ -246,35 +265,28 @@ void Board::makeMove(Move move) {
     // Remove moving piece from origin
     hash ^= z.piece[piece_to_zobrist_index(movingPiece)][fromSq];
 
-    bb_clear(*this, movingPiece, fromSq);
-    if (target_piece != 0) {
-        bb_clear(*this, target_piece, toSq);
-        hash ^= z.piece[piece_to_zobrist_index(target_piece)][toSq];
+    remove_piece(*this, movingPiece, fromSq);
+    if (target_piece != EMPTY) {
+        remove_piece(*this, target_piece, toSq);
+        hash ^= z.piece[piece_to_zobrist_index(target_piece)][toSq]; // Remove captured piece from hash
     }
-    bb_set(*this, movingPiece, toSq);
+    add_piece(*this, movingPiece, toSq);
 
-    mailbox[fromSq] = 0;
-    if (target_piece != 0) mailbox[toSq] = 0;
-
-    if (piece_type(movingPiece) == PAWN && flags == 5) { // En passant capture
+    if (isEnPassant) {
         int captureSq = toSq + ((stm == WHITE) ? -8 : 8); // Captured pawn is one rank behind destination from mover's perspective
         int capturedPawn = (piece_color(movingPiece) == WHITE) ? B_PAWN : W_PAWN;
-        bb_clear(*this, capturedPawn, captureSq);
-        mailbox[captureSq] = 0;
+        remove_piece(*this, capturedPawn, captureSq);
         hash ^= z.piece[piece_to_zobrist_index(capturedPawn)][captureSq];
     }
 
-    if (piece_type(movingPiece) == KING && std::abs(sq_to_col(fromSq) - sq_to_col(toSq)) == 2) {
+    if (isCastle) {
         if (sq_to_col(toSq) > sq_to_col(fromSq)) {
             int rookFromSq = row_col_to_sq(sq_to_row(toSq), sq_to_col(toSq) + 1);
             int rookToSq = row_col_to_sq(sq_to_row(toSq), sq_to_col(toSq) - 1);
             int rookPiece = make_piece(ROOK, piece_color(movingPiece));
 
-            bb_clear(*this, rookPiece, rookFromSq);
-            bb_set(*this, rookPiece, rookToSq);
-            int rook = mailbox[rookFromSq];
-            mailbox[rookToSq] = rook;
-            mailbox[rookFromSq] = 0;
+            move_piece(*this, rookPiece, rookFromSq, rookToSq);
+
             hash ^= z.piece[piece_to_zobrist_index(rookPiece)][rookFromSq];
             hash ^= z.piece[piece_to_zobrist_index(rookPiece)][rookToSq];
         } else {
@@ -282,11 +294,8 @@ void Board::makeMove(Move move) {
             int rookToSq = row_col_to_sq(sq_to_row(toSq), sq_to_col(toSq) + 1);
             int rookPiece = make_piece(ROOK, piece_color(movingPiece));
 
-            bb_clear(*this, rookPiece, rookFromSq);
-            bb_set(*this, rookPiece, rookToSq);
-            int rook = mailbox[rookFromSq];
-            mailbox[rookToSq] = rook;
-            mailbox[rookFromSq] = 0;
+            move_piece(*this, rookPiece, rookFromSq, rookToSq);
+
             hash ^= z.piece[piece_to_zobrist_index(rookPiece)][rookFromSq];
             hash ^= z.piece[piece_to_zobrist_index(rookPiece)][rookToSq];
         }
@@ -294,17 +303,16 @@ void Board::makeMove(Move move) {
 
     int placedPiece = movingPiece;
     if (piece_type(movingPiece) == PAWN) {
-        if (promo != -1) {
+        if (isPromotion) {
             placedPiece = make_piece(promo, piece_color(movingPiece));
-            bb_clear(*this, movingPiece, toSq);
-            bb_set(*this, placedPiece, toSq);
+            remove_piece(*this, movingPiece, toSq);
+            add_piece(*this, placedPiece, toSq);
         }
     }
 
-    mailbox[toSq] = placedPiece;
     hash ^= z.piece[piece_to_zobrist_index(placedPiece)][toSq];
 
-    if (piece_type(movingPiece) == PAWN && std::abs(sq_to_row(fromSq) - sq_to_row(toSq)) == 2) {
+    if (isDoublePawnPush) {
         const bool opponentWhite = (stm == BLACK);
         const int epRow = opponentWhite ? 2 : 5;
         const int epSq = row_col_to_sq(epRow, sq_to_col(toSq));
@@ -368,53 +376,47 @@ void Board::unmakeMove(Move move) {
     this->undoStack.pop_back();
     const int fromSq = move_from(move);
     const int toSq = move_to(move);
+    const int flags = move_flags(move);
+    const bool isPromotion = is_promotion(move);
+    const bool isCastle = flags == FLAG_CASTLE_KING || flags == FLAG_CASTLE_QUEEN;
+    const bool isEnPassant = flags == FLAG_EN_PASSANT;
     
     stm = other_color(stm);
 
     int pieceOnTo = mailbox[toSq];
     int pieceBase = pieceOnTo;
-    if (move_flags(move) >= 8) { // Promotion undo
+    if (isPromotion) {
         pieceBase = make_piece(PAWN, piece_color(pieceOnTo));
     }
 
     // Remove moved piece from destination
-    bb_clear(*this, pieceOnTo, toSq);
-    mailbox[toSq] = 0;
+    remove_piece(*this, pieceOnTo, toSq);
 
     // Undo castling ROOK move if needed
-    if (move_flags(move) == 3 || move_flags(move) == 2) { // Castling move
+    if (isCastle) {
         if (sq_to_col(toSq) > sq_to_col(fromSq)) {
             int rookFromSq = row_col_to_sq(sq_to_row(toSq), sq_to_col(toSq) - 1);
             int rookToSq = row_col_to_sq(sq_to_row(toSq), sq_to_col(toSq) + 1);
             int rookPiece = make_piece(ROOK, piece_color(pieceBase));
-            bb_clear(*this, rookPiece, rookFromSq);
-            bb_set(*this, rookPiece, rookToSq);
-            mailbox[rookFromSq] = 0;
-            mailbox[rookToSq] = rookPiece;
+            move_piece(*this, rookPiece, rookFromSq, rookToSq);
         } else {
             int rookFromSq = row_col_to_sq(sq_to_row(toSq), sq_to_col(toSq) + 1);
             int rookToSq = row_col_to_sq(sq_to_row(toSq), sq_to_col(toSq) - 2);
             int rookPiece = make_piece(ROOK, piece_color(pieceBase));
-            bb_clear(*this, rookPiece, rookFromSq);
-            bb_set(*this, rookPiece, rookToSq);
-            mailbox[rookFromSq] = 0;
-            mailbox[rookToSq] = rookPiece;
+            move_piece(*this, rookPiece, rookFromSq, rookToSq);
         }
     }
 
     // Restore moving piece to origin
-    bb_set(*this, pieceBase, fromSq);
-    mailbox[fromSq] = pieceBase;
+    add_piece(*this, pieceBase, fromSq);
 
     // Restore captured piece
-    if (move_flags(move) == 5) { // En passant capture
+    if (isEnPassant) {
         int capturedPawn = stm == WHITE ? B_PAWN : W_PAWN;
         int captureSq = row_col_to_sq(sq_to_row(fromSq), sq_to_col(toSq));
-        bb_set(*this, capturedPawn, captureSq);
-        mailbox[captureSq] = capturedPawn;
+        add_piece(*this, capturedPawn, captureSq);
     } else if (st.capturedPiece != 0) {
-        bb_set(*this, st.capturedPiece, toSq);
-        mailbox[toSq] = st.capturedPiece;
+        add_piece(*this, st.capturedPiece, toSq);
     }
 
     castling = st.castling;
