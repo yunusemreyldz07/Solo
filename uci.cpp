@@ -318,11 +318,7 @@ int handle_uci_commands(int argc, char* argv[]){
 
         else if (line.substr(0, 8) == "position") {
             stop_and_join_search();
-            if (line.find("startpos") != std::string::npos) {
-                board.reset();
-                clear_history();
-            }
-            else if (line.find("fen") != std::string::npos) {
+            if (line.find("fen") != std::string::npos) {
                 size_t fenStart = line.find("fen") + 4;
                 size_t movesPos = line.find("moves");
                 std::string fenStr;
@@ -333,9 +329,11 @@ int handle_uci_commands(int argc, char* argv[]){
                 }
                 board.loadFEN(fenStr);
             }
+            else {
+                board.reset();
+            }
             gameHistory.clear();
             gameHistory.push_back(position_key(board));
-            clear_history();
             
             size_t movesPos = line.find("moves");
             if (movesPos != std::string::npos) {
