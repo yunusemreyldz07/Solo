@@ -324,7 +324,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         return 0; // DRAW
     }
 
-    bool firstMove = true; // for PVS
+    bool firstMove = true; // for PVS 
     int16_t eval = 0; 
 
     int rawEval = evaluate_board(board);
