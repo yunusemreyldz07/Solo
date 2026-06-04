@@ -86,10 +86,14 @@ int get_history_score(int color, int fromSq, int toSq) {
 
 void update_corrhist(int stm, uint64_t pawnHash, int diff, int depth) {
     int index = pawnHash % CORRHIST_SIZE;
-    int w = std::min(depth, 16);
-    int scaled = diff * w;
-    scaled = std::clamp(scaled, -CORRHIST_GRAIN, CORRHIST_GRAIN);
-    corrHist[stm][index] += scaled - corrHist[stm][index] * std::abs(scaled) / CORRHIST_GRAIN;
+    int target = diff * 256;
+    target = std::clamp(target, -CORRHIST_GRAIN, CORRHIST_GRAIN);
+    int divisor = 256 + 128 * (16 - std::min(depth, 16));
+    int change = (target - corrHist[stm][index]) / divisor;
+    if (change == 0 && target != corrHist[stm][index]) {
+        change = (target > corrHist[stm][index]) ? 1 : -1;
+    }
+    corrHist[stm][index] += change;
 }
 
 int get_corrhist(int stm, uint64_t pawnHash) {

@@ -218,7 +218,7 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply, SearchStack*
 
     if (ply >= 128) {
         int rawEval = evaluate_board(board);
-        return std::clamp(rawEval + get_corrhist(board.stm, board.pawn_hash) / 512, -MATE_SCORE + MAX_PLY + 1, MATE_SCORE - MAX_PLY - 1);
+        return std::clamp(rawEval + get_corrhist(board.stm, board.pawn_hash) / 256, -MATE_SCORE + MAX_PLY + 1, MATE_SCORE - MAX_PLY - 1);
     }
 
     int16_t originalAlpha = alpha;
@@ -241,7 +241,7 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply, SearchStack*
     int rawEval = evaluate_board(board);
     uint64_t pawnHash = board.pawn_hash;
     int corr = get_corrhist(board.stm, pawnHash);
-    int stand_pat = std::clamp(rawEval + corr / 512, -MATE_SCORE + MAX_PLY + 1, MATE_SCORE - MAX_PLY - 1);
+    int stand_pat = std::clamp(rawEval + corr / 256, -MATE_SCORE + MAX_PLY + 1, MATE_SCORE - MAX_PLY - 1);
 
     if (stand_pat >= beta) {
         return stand_pat;
@@ -330,7 +330,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
     int rawEval = evaluate_board(board);
     uint64_t pawnHash = board.pawn_hash;
     int corr = get_corrhist(board.stm, pawnHash);
-    const int16_t staticEval = std::clamp(rawEval + corr / 512, -MATE_SCORE + MAX_PLY + 1, MATE_SCORE - MAX_PLY - 1);
+    const int16_t staticEval = std::clamp(rawEval + corr / 256, -MATE_SCORE + MAX_PLY + 1, MATE_SCORE - MAX_PLY - 1);
     ss->staticEval = staticEval;
     ss->cutOffCount = 0;  // Initialize cutoff counter for this node
     const bool pvNode = (beta - alpha > 1);
@@ -659,16 +659,26 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         return bestEval; // Don't write to TT if search was aborted.
     }
 
-    if (!ss->singularMove && !inCheck && bestMove &&
-        bestEval > -MATE_SCORE + MAX_PLY && bestEval < MATE_SCORE - MAX_PLY) {
-        update_corrhist(board.stm, board.pawn_hash, bestEval - staticEval, depth);
-    }
-
     TTFlag flag = TT_EXACT;
     if (alpha <= originalAlpha) {
         flag = TT_BETA;
     } else if (alpha >= beta) {
         flag = TT_ALPHA;
+    }
+
+    bool updateCorrHist = false;
+    if (flag == TT_EXACT) {
+        updateCorrHist = true;
+    } else if (flag == TT_BETA && bestEval < staticEval) {
+        updateCorrHist = true;
+    } else if (flag == TT_ALPHA && bestEval > staticEval) {
+        updateCorrHist = true;
+    }
+
+    if (updateCorrHist && !ss->singularMove && !inCheck && 
+        !is_capture(bestMove) && !is_promotion(bestMove) &&
+        bestEval > -MATE_SCORE + MAX_PLY && bestEval < MATE_SCORE - MAX_PLY) {
+        update_corrhist(board.stm, board.pawn_hash, bestEval - staticEval, depth);
     }
     int16_t ttScore = bestEval;
 

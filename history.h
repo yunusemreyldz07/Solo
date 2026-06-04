@@ -14,7 +14,7 @@ extern int conhistTable[12][64][12][64]; // [prevPiece][prevTo][currPiece][currT
 
 // Corrhist table
 inline constexpr int CORRHIST_SIZE = 16384;
-inline constexpr int CORRHIST_GRAIN = 16384;
+inline constexpr int CORRHIST_GRAIN = 32768;
 extern int corrHist[2][CORRHIST_SIZE];
 
 extern thread_local MoveInfo moveStack[MAX_PLY];
