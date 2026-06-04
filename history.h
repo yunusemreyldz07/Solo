@@ -14,11 +14,13 @@ extern int conhistTable[12][64][12][64]; // [prevPiece][prevTo][currPiece][currT
 
 // Corrhist table
 inline constexpr int CORRHIST_SIZE = 16384;
+inline constexpr int CORRHIST_GRAIN = 16384;
 extern int corrHist[2][CORRHIST_SIZE];
 
 extern thread_local MoveInfo moveStack[MAX_PLY];
 
 void clear_history();
+void clear_corrhist();
 void reset_movestack();
 void update_history(const Board& board, int color, int fromSq, int toSq, int depth, const Move badQuiets[256], const int& badQuietCount, int ply);
 int get_history_score(int color, int fromSq, int toSq);

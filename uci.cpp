@@ -89,6 +89,7 @@ void bench() {
 
     for (size_t i = 0; i < fens.size(); ++i) {
         clear_history();
+        clear_corrhist();
         board.loadFEN(fens[i]);
         std::vector<uint64_t> positionHistory;
         positionHistory.reserve(64);
@@ -312,6 +313,7 @@ int handle_uci_commands(int argc, char* argv[]){
             ttTable.clear();
             board.reset();
             clear_history();
+            clear_corrhist();
             gameHistory.clear();
             gameHistory.push_back(position_key(board));
         }

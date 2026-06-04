@@ -11,6 +11,9 @@ constexpr int HISTORY_MAX = 16384;
 void clear_history() {
     std::memset(historyTable, 0, sizeof(historyTable));
     std::memset(conhistTable, 0, sizeof(conhistTable));
+}
+
+void clear_corrhist() {
     std::memset(corrHist, 0, sizeof(corrHist));
 }
 
@@ -83,9 +86,10 @@ int get_history_score(int color, int fromSq, int toSq) {
 
 void update_corrhist(int stm, uint64_t pawnHash, int diff, int depth) {
     int index = pawnHash % CORRHIST_SIZE;
-    int bonus = diff * depth;
-    bonus = std::clamp(bonus, -HISTORY_MAX, HISTORY_MAX);
-    corrHist[stm][index] += bonus - corrHist[stm][index] * abs(bonus) / HISTORY_MAX;
+    int w = std::min(16, 4 * depth + 4);
+    int scaled = diff * w;
+    scaled = std::clamp(scaled, -CORRHIST_GRAIN, CORRHIST_GRAIN);
+    corrHist[stm][index] += scaled - corrHist[stm][index] * std::abs(scaled) / CORRHIST_GRAIN;
 }
 
 int get_corrhist(int stm, uint64_t pawnHash) {

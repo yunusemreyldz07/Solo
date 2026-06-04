@@ -659,7 +659,8 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         return bestEval; // Don't write to TT if search was aborted.
     }
 
-    if (!ss->singularMove && !inCheck && bestEval > -MATE_SCORE + MAX_PLY && bestEval < MATE_SCORE - MAX_PLY) {
+    if (!ss->singularMove && !inCheck && bestMove &&
+        bestEval > -MATE_SCORE + MAX_PLY && bestEval < MATE_SCORE - MAX_PLY) {
         update_corrhist(board.stm, board.pawn_hash, bestEval - staticEval, depth);
     }
 
