@@ -133,16 +133,18 @@ Move MovePicker::next_move() {
                 Move move = next_scored_move();
                 if (move != 0) {
                     if (move == ttMove) continue;
-                    // TODO: SEE(move, 0) burada QS pruning amacıyla kullanılıyor;
-                    // bu mantık search.cpp'deki qsearch'e taşınmalı
-                    if (!staticExchangeEvaluation(board, move, 0)) {
-                        if (badCaptureCount < 256) {
-                            badCaptures[badCaptureCount++] = move;
+                    
+                    if (!isQSearch) {
+                        if (!staticExchangeEvaluation(board, move, 0)) {
+                            if (badCaptureCount < 256) {
+                                badCaptures[badCaptureCount++] = move;
+                            }
+                            continue;
                         }
-                        continue;
-                    }
-                    if (!isQSearch && !is_legal(move)) {
-                        continue;
+
+                        if (!is_legal(move)) {
+                            continue;
+                        }
                     }
                     return move;
                 }

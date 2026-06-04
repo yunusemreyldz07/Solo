@@ -217,7 +217,8 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply, SearchStack*
     updateSeldepth(ply);
 
     if (ply >= 128) {
-        return evaluate_board(board);
+        int rawEval = evaluate_board(board);
+        return std::clamp(rawEval + get_corrhist(board.stm, get_pawn_hash(board)) / 512, -MATE_SCORE + MAX_PLY + 1, MATE_SCORE - MAX_PLY - 1);
     }
 
     int16_t originalAlpha = alpha;
@@ -237,7 +238,10 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply, SearchStack*
         if (ttEntry.flag == TT_ALPHA && ttScore >= beta) return ttScore;
     }
 
-    int stand_pat = evaluate_board(board);
+    int rawEval = evaluate_board(board);
+    uint64_t pawnHash = get_pawn_hash(board);
+    int corr = get_corrhist(board.stm, pawnHash);
+    int stand_pat = std::clamp(rawEval + corr / 512, -MATE_SCORE + MAX_PLY + 1, MATE_SCORE - MAX_PLY - 1);
 
     if (stand_pat >= beta) {
         return stand_pat;
@@ -253,6 +257,11 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply, SearchStack*
     Move captureMove;
 
     while ((captureMove = mp.next_move()) != 0) {
+        // QS-specific SEE pruning: skip captures that are losing by SEE.
+        if (!staticExchangeEvaluation(board, captureMove, 0)) {
+            continue;
+        }
+
         board.makeMove(captureMove);
         int kingSq = -1;
         king_square(board, board.stm == BLACK, kingSq);
@@ -260,9 +269,9 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply, SearchStack*
             board.unmakeMove(captureMove);
             continue;
         }
-        
+
         int eval = -qsearch(board, -beta, -alpha, ply + 1, ss + 1);
-        
+
         board.unmakeMove(captureMove);
 
         if (eval > bestEval) {
@@ -318,7 +327,10 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
     bool firstMove = true; // for PVS
     int16_t eval = 0; 
 
-    const int16_t staticEval = evaluate_board(board);
+    int rawEval = evaluate_board(board);
+    uint64_t pawnHash = get_pawn_hash(board);
+    int corr = get_corrhist(board.stm, pawnHash);
+    const int16_t staticEval = std::clamp(rawEval + corr / 512, -MATE_SCORE + MAX_PLY + 1, MATE_SCORE - MAX_PLY - 1);
     ss->staticEval = staticEval;
     ss->cutOffCount = 0;  // Initialize cutoff counter for this node
     const bool pvNode = (beta - alpha > 1);
@@ -645,6 +657,10 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
 
     if (aborted) {
         return bestEval; // Don't write to TT if search was aborted.
+    }
+
+    if (!ss->singularMove && !inCheck && bestEval > -MATE_SCORE + MAX_PLY && bestEval < MATE_SCORE - MAX_PLY) {
+        update_corrhist(board.stm, get_pawn_hash(board), bestEval - staticEval, depth);
     }
 
     TTFlag flag = TT_EXACT;

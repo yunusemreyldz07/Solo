@@ -4,12 +4,14 @@
 
 int historyTable[2][64][64]; // color x fromSquare x toSquare
 int conhistTable[12][64][12][64]; // [prevPiece][prevTo][currPiece][currTo]
+int corrHist[2][CORRHIST_SIZE];
 thread_local MoveInfo moveStack[MAX_PLY];
 constexpr int HISTORY_MAX = 16384;
 
 void clear_history() {
     std::memset(historyTable, 0, sizeof(historyTable));
     std::memset(conhistTable, 0, sizeof(conhistTable));
+    std::memset(corrHist, 0, sizeof(corrHist));
 }
 
 void reset_movestack() {
@@ -77,4 +79,30 @@ void update_history(const Board& board, int color, int fromSq, int toSq, int dep
 
 int get_history_score(int color, int fromSq, int toSq) {
     return historyTable[color][fromSq][toSq];
+}
+
+void update_corrhist(int stm, uint64_t pawnHash, int diff, int depth) {
+    int index = pawnHash % CORRHIST_SIZE;
+    int bonus = diff * depth;
+    bonus = std::clamp(bonus, -HISTORY_MAX, HISTORY_MAX);
+    corrHist[stm][index] += bonus - corrHist[stm][index] * abs(bonus) / HISTORY_MAX;
+}
+
+int get_corrhist(int stm, uint64_t pawnHash) {
+    return corrHist[stm][pawnHash % CORRHIST_SIZE];
+}
+
+uint64_t get_pawn_hash(const Board& board) {
+    uint64_t h = 0;
+    const Zobrist& z = zobrist();
+    for (int c = 0; c < 2; c++) {
+        Bitboard pawns = board.piece[PAWN - 1] & board.color[c];
+        int base = c * 6 + (PAWN - 1);
+        while (pawns) {
+            int sq = lsb(pawns);
+            pawns &= pawns - 1;
+            h ^= z.piece[base][sq];
+        }
+    }
+    return h;
 }
