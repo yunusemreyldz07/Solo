@@ -27,6 +27,4 @@ int get_conhist_score(int piece, int to, int ply);
 void update_corrhist(int stm, uint64_t pawnHash, int diff, int depth);
 int get_corrhist(int stm, uint64_t pawnHash);
 
-uint64_t get_pawn_hash(const Board& board);
-
 #endif

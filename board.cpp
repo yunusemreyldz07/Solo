@@ -128,6 +128,7 @@ void Board::reset() {
     undoStack.clear();
 
     hash = position_key(*this);
+    pawn_hash = compute_pawn_key(*this);
 
     if (USE_NNUE) {
         accValid[0] = true;
@@ -144,6 +145,7 @@ void Board::makeMove(Move move) {
 
     UndoState st;
     st.hash = this->hash; // Store the current hash before making the move
+    st.pawn_hash = this->pawn_hash;
     st.castling = castling;   
     st.enPassant = enPassant;
     st.halfMoveClock = halfMoveClock;
@@ -264,11 +266,13 @@ void Board::makeMove(Move move) {
 
     // Remove moving piece from origin
     hash ^= z.piece[piece_to_zobrist_index(movingPiece)][fromSq];
+    if (piece_type(movingPiece) == PAWN) pawn_hash ^= z.piece[piece_to_zobrist_index(movingPiece)][fromSq];
 
     remove_piece(*this, movingPiece, fromSq);
     if (target_piece != EMPTY) {
         remove_piece(*this, target_piece, toSq);
         hash ^= z.piece[piece_to_zobrist_index(target_piece)][toSq]; // Remove captured piece from hash
+        if (piece_type(target_piece) == PAWN) pawn_hash ^= z.piece[piece_to_zobrist_index(target_piece)][toSq];
     }
     add_piece(*this, movingPiece, toSq);
 
@@ -277,6 +281,7 @@ void Board::makeMove(Move move) {
         int capturedPawn = (piece_color(movingPiece) == WHITE) ? B_PAWN : W_PAWN;
         remove_piece(*this, capturedPawn, captureSq);
         hash ^= z.piece[piece_to_zobrist_index(capturedPawn)][captureSq];
+        pawn_hash ^= z.piece[piece_to_zobrist_index(capturedPawn)][captureSq];
     }
 
     if (isCastle) {
@@ -311,6 +316,7 @@ void Board::makeMove(Move move) {
     }
 
     hash ^= z.piece[piece_to_zobrist_index(placedPiece)][toSq];
+    if (piece_type(placedPiece) == PAWN) pawn_hash ^= z.piece[piece_to_zobrist_index(placedPiece)][toSq];
 
     if (isDoublePawnPush) {
         const bool opponentWhite = (stm == BLACK);
@@ -423,6 +429,7 @@ void Board::unmakeMove(Move move) {
     enPassant = st.enPassant;
     halfMoveClock = st.halfMoveClock;
     this->hash = st.hash;
+    this->pawn_hash = st.pawn_hash;
 
 }
 
@@ -841,4 +848,21 @@ bool is_insufficient_material(const Board& board) {
 
     
     return false;
+}
+
+uint64_t compute_pawn_key(const Board& board) {
+    const Zobrist& z = zobrist();
+    uint64_t h = 0;
+
+    for (int c = 0; c < 2; c++) {
+        Bitboard pawns = board.piece[PAWN - 1] & board.color[c];
+        int base = c * 6 + (PAWN - 1);
+        while (pawns) {
+            int sq = lsb(pawns);
+            pawns &= pawns - 1;
+            h ^= z.piece[base][sq];
+        }
+    }
+
+    return h;
 }

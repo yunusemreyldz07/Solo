@@ -28,6 +28,7 @@ struct UndoState {
     int8_t enPassant;
     int16_t halfMoveClock;
     uint64_t hash;
+    uint64_t pawn_hash;
     DirtyState dirty;
 };
 
@@ -35,6 +36,7 @@ struct Board {
     Bitboard piece[6];
     Bitboard color[2];
     uint64_t hash;
+    uint64_t pawn_hash;
 
     uint8_t castling;
     int8_t enPassant;
@@ -115,6 +117,7 @@ struct Zobrist {
 const Zobrist& zobrist();
 int piece_to_zobrist_index(int piece);
 uint64_t position_key(const Board& board);
+uint64_t compute_pawn_key(const Board& board);
 bool is_repetition(const std::vector<uint64_t>& positionHistory, int16_t halfMoveClock);
 
 inline bool is_fifty_move_draw(const Board& board) {

@@ -92,17 +92,3 @@ int get_corrhist(int stm, uint64_t pawnHash) {
     return corrHist[stm][pawnHash % CORRHIST_SIZE];
 }
 
-uint64_t get_pawn_hash(const Board& board) {
-    uint64_t h = 0;
-    const Zobrist& z = zobrist();
-    for (int c = 0; c < 2; c++) {
-        Bitboard pawns = board.piece[PAWN - 1] & board.color[c];
-        int base = c * 6 + (PAWN - 1);
-        while (pawns) {
-            int sq = lsb(pawns);
-            pawns &= pawns - 1;
-            h ^= z.piece[base][sq];
-        }
-    }
-    return h;
-}
