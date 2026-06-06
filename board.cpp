@@ -8,7 +8,6 @@
 #include <cstring> // for memcpy
 #include <cstdio> // for snprintf
 
-#define MAX_GAME_PLY 2048
 
 namespace {
 
@@ -115,6 +114,50 @@ Board::Board() {
     accStack = std::make_unique<std::array<Accumulator, 2>[]>(MAX_GAME_PLY);
     accValid = std::make_unique<bool[]>(MAX_GAME_PLY);
     reset();
+}
+
+Board::Board(const Board& other) {
+    std::memcpy(piece, other.piece, sizeof(piece));
+    std::memcpy(color, other.color, sizeof(color));
+    std::memcpy(mailbox, other.mailbox, sizeof(mailbox));
+    hash = other.hash;
+    castling = other.castling;
+    enPassant = other.enPassant;
+    stm = other.stm;
+    halfMoveClock = other.halfMoveClock;
+    moveHistory = other.moveHistory;
+    undoStack = other.undoStack;
+
+    accStack = std::make_unique<std::array<Accumulator, 2>[]>(MAX_GAME_PLY);
+    accValid = std::make_unique<bool[]>(MAX_GAME_PLY);
+    std::copy_n(other.accStack.get(), MAX_GAME_PLY, accStack.get());
+    std::copy_n(other.accValid.get(), MAX_GAME_PLY, accValid.get());
+}
+
+Board& Board::operator=(const Board& other) {
+    if (this == &other) return *this;
+
+    std::memcpy(piece, other.piece, sizeof(piece));
+    std::memcpy(color, other.color, sizeof(color));
+    std::memcpy(mailbox, other.mailbox, sizeof(mailbox));
+    hash = other.hash;
+    castling = other.castling;
+    enPassant = other.enPassant;
+    stm = other.stm;
+    halfMoveClock = other.halfMoveClock;
+    moveHistory = other.moveHistory;
+    undoStack = other.undoStack;
+
+    if (!accStack) {
+        accStack = std::make_unique<std::array<Accumulator, 2>[]>(MAX_GAME_PLY);
+    }
+    if (!accValid) {
+        accValid = std::make_unique<bool[]>(MAX_GAME_PLY);
+    }
+    std::copy_n(other.accStack.get(), MAX_GAME_PLY, accStack.get());
+    std::copy_n(other.accValid.get(), MAX_GAME_PLY, accValid.get());
+
+    return *this;
 }
 
 void Board::reset() {

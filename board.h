@@ -13,6 +13,7 @@
 #include "move.h"
 
 // Search constants
+inline constexpr int MAX_GAME_PLY = 2048;
 inline constexpr int MAX_PLY = 128;
 inline constexpr int16_t MATE_SCORE = 30000;
 inline constexpr int16_t VALUE_INF  = 32000;
@@ -50,6 +51,8 @@ struct Board {
     std::unique_ptr<bool[]> accValid;
 
     Board();
+    Board(const Board& other);
+    Board& operator=(const Board& other);
     void reset();
     void loadFEN(const std::string& fen);
     void makeMove(Move move);

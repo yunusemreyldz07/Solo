@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <thread>
 
 #define MAX_MOVES 256
 #define SEE_THRESHOLD -82
@@ -33,6 +34,12 @@ thread_local bool      time_limited         = false;
 thread_local int       seldepth             = 0;
 thread_local Move      singularPvTable[MAX_PLY][MAX_PLY];
 thread_local int       singularPvLength[MAX_PLY];
+thread_local bool      is_main_thread       = false;
+
+// Shared pointers to each thread's nodeCount (so main thread can report total nodes).
+// Safe to read/write across threads because we only read for informational outputs,
+// and write only from the thread itself.
+inline long long* thread_node_counts[1024] = {nullptr};
 
 inline void updateSeldepth(int ply) {
     if (ply > seldepth) seldepth = ply;
@@ -72,6 +79,9 @@ inline bool should_stop_search() {
     // Check soft node limit on every node (thread_local, no contention)
     if (soft_node_limit > 0 && nodeCount >= soft_node_limit) {
         stop_search_local = true;
+        if (is_main_thread) {
+            stop_search_global.store(true, std::memory_order_relaxed);
+        }
         return true;
     }
     if (!time_limited) return false;
@@ -79,6 +89,9 @@ inline bool should_stop_search() {
         long long elapsed = now_ms() - start_time_ms;
         if (elapsed >= hard_time_limit_ms) {
             stop_search_local = true;
+            if (is_main_thread) {
+                stop_search_global.store(true, std::memory_order_relaxed);
+            }
             return true;
         }
     }
@@ -669,179 +682,241 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
     return bestEval;
 }
 
-Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<uint64_t>& positionHistory, int ply, bool silent, int16_t& outScore) {
-    int16_t score = 0;
-    outScore = 0;
+Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<uint64_t>& positionHistory, int ply, bool silent, int16_t& outScore, int numThreads) {
 
-    SearchStack ss[MAX_PLY + 8] = {};
+    // Clamp numThreads to a safe range matching thread_node_counts size
+    if (numThreads < 1) numThreads = 1;
+    if (numThreads > 1024) numThreads = 1024;
 
-    Move pvTable[MAX_PLY][MAX_PLY];
-    int pvLength[MAX_PLY];
-    memset(pvLength, 0, sizeof(pvLength));
+    stop_search_global.store(false, std::memory_order_relaxed);
 
-    std::vector<uint64_t> searchHistory = positionHistory;
+    // runs one iterative-deepening search ──
+    // Each thread calls this with its own Board copy
+    // Returns best move found by the worker
+    auto searchWorker = [&](Board workerBoard,
+                            std::vector<uint64_t> searchHistory,
+                            bool workerSilent,
+                            int startDepth,
+                            int16_t& workerScore,
+                            long long& workerNodes,
+                            int threadId) -> Move {
 
-    reset_movestack();
-    stop_search_local = false;
-    stop_search_global.store(false, std::memory_order_relaxed); // clear any prior UCI stop
-    resetNodeCounter();
-    clearKillers();
-    const long long searchStartMs = now_ms();
-    start_time_ms = searchStartMs;
-    if (movetimeMs > 0) {
-        long long safeTime = movetimeMs;
-        long long softTime = (safeTime * 7) / 10;
-        if (softTime < 1) softTime = 1;
-        soft_time_limit_ms = softTime;
-        hard_time_limit_ms = safeTime;
-        time_limited = true;
-    } else {
-        time_limited = false;
-        soft_time_limit_ms = 0;
-        hard_time_limit_ms = 0;
-    }
+        is_main_thread = (threadId == 0);
+        int16_t score = 0;
+        SearchStack ss[MAX_PLY + 8] = {};
+        Move pvTable[MAX_PLY][MAX_PLY];
+        int pvLength[MAX_PLY];
+        memset(pvLength, 0, sizeof(pvLength));
 
-    int moveCount = 0;
-    Move moves[MAX_MOVES];
-    get_all_moves(board, moves, moveCount);
-    if (moveCount == 0) return 0;
-    Move bestMoveSoFar = moves[0];
-
-    // for smart time management
-    int bestMoveStableDepths = 0;
-    Move lastIterationBestMove = 0;
-    double tmMultiplier = 1.0;
-
-    // Iterative Deepening
-    for(int iterativeDepth = 1; iterativeDepth <= maxDepth; ++iterativeDepth) {
-        resetSeldepth();
+        reset_movestack();
+        stop_search_local = false;
+        resetNodeCounter();
+        thread_node_counts[threadId] = &nodeCount;
         
-        if (should_stop_search()) break;
-        
-        int16_t alpha = -VALUE_INF;
-        int16_t beta = VALUE_INF;
-        int delta = 9;
-        const bool useAspiration = (iterativeDepth >= 4);
-
-        if (useAspiration) {
-            alpha = std::max<int16_t>(alpha, static_cast<int16_t>(score - delta));
-            beta = std::min<int16_t>(beta, static_cast<int16_t>(score + delta));
+        clearKillers();
+        const long long searchStartMs = now_ms();
+        start_time_ms = searchStartMs;
+        if (movetimeMs > 0) {
+            long long safeTime = movetimeMs;
+            long long softTime = (safeTime * 7) / 10;
+            if (softTime < 1) softTime = 1;
+            soft_time_limit_ms = softTime;
+            hard_time_limit_ms = safeTime;
+            time_limited = true;
+        } else {
+            time_limited = false;
+            soft_time_limit_ms = 0;
+            hard_time_limit_ms = 0;
         }
 
-        while (true) {
-            int16_t searchScore = negamax(board, iterativeDepth, alpha, beta, ply, ss, pvTable, pvLength, searchHistory);
+        int moveCount = 0;
+        Move moves[MAX_MOVES];
+        get_all_moves(workerBoard, moves, moveCount);
+        if (moveCount == 0) {
+            workerScore = 0;
+            workerNodes = 0;
+            thread_node_counts[threadId] = nullptr;
+            return 0;
+        }
+        Move bestMoveSoFar = moves[0];
 
-            if (should_stop_search()) {
-                break;
+        int bestMoveStableDepths = 0;
+        Move lastIterationBestMove = 0;
+        double tmMultiplier = 1.0;
+
+        for (int iterativeDepth = startDepth; iterativeDepth <= maxDepth; ++iterativeDepth) {
+            resetSeldepth();
+            if (should_stop_search()) break;
+
+            int16_t alpha = -VALUE_INF;
+            int16_t beta = VALUE_INF;
+            int delta = 9;
+            const bool useAspiration = (iterativeDepth >= 4);
+
+            if (useAspiration) {
+                alpha = std::max<int16_t>(alpha, static_cast<int16_t>(score - delta));
+                beta = std::min<int16_t>(beta, static_cast<int16_t>(score + delta));
             }
 
-            if (!useAspiration) {
+            while (true) {
+                int16_t searchScore = negamax(workerBoard, iterativeDepth, alpha, beta, ply, ss, pvTable, pvLength, searchHistory);
+                if (should_stop_search()) break;
+
+                if (!useAspiration) { score = searchScore; break; }
+
+                if (searchScore <= alpha) {
+                    delta = std::min(4096, delta + delta * 9 / 5);
+                    alpha = std::max<int16_t>(-VALUE_INF, static_cast<int16_t>(searchScore - delta));
+                    continue;
+                }
+                if (searchScore >= beta) {
+                    delta = std::min(4096, delta + delta * 9 / 5);
+                    beta = std::min<int16_t>(VALUE_INF, static_cast<int16_t>(searchScore + delta));
+                    continue;
+                }
                 score = searchScore;
                 break;
             }
 
-            if (searchScore <= alpha) {
-                delta = std::min(4096, delta + delta * 9 / 5);
-                alpha = std::max<int16_t>(-VALUE_INF, static_cast<int16_t>(searchScore - delta));
-                continue;
+            if (should_stop_search()) break;
+
+            if (pvLength[0] > 0) {
+                bestMoveSoFar = pvTable[0][0];
             }
 
-            if (searchScore >= beta) {
-                delta = std::min(4096, delta + delta * 9 / 5);
-                beta = std::min<int16_t>(VALUE_INF, static_cast<int16_t>(searchScore + delta));
-                continue;
-            }
+            long long elapsedMs = now_ms() - searchStartMs;
+            if (elapsedMs < 0) elapsedMs = 0;
 
-            score = searchScore;
-            break;
-        }
-
-        if (should_stop_search()) {
-            break;
-        }
-
-        if (pvLength[0] > 0) {
-            bestMoveSoFar = pvTable[0][0];
-        }
-
-        long long elapsedMs = now_ms() - searchStartMs;
-        if (elapsedMs < 0) elapsedMs = 0;
-        long long nodes = getNodeCounter();
-        long long nps = (elapsedMs > 0) ? (nodes * 1000 / elapsedMs) : (nodes * 1000);
-        
-        
-        if (!silent) {
-            if (score <= MATE_SCORE - MAX_PLY) {
-                std::cout << "info depth " << iterativeDepth
-                          << " seldepth " << getSeldepth()
-                          << " nodes " << nodes
-                          << " hashfull " << hash_full()
-                          << " time " << elapsedMs
-                          << " nps " << nps
-                          << " score cp " << score
-                          << " pv ";
+            // Calculate total nodes across all active threads
+            long long totalNodes = 0;
+            if (numThreads <= 1) {
+                totalNodes = nodeCount;
             } else {
-                std::cout << "info depth " << iterativeDepth
-                          << " seldepth " << getSeldepth()
-                          << " nodes " << nodes
-                          << " hashfull " << hash_full()
-                          << " time " << elapsedMs
-                          << " nps " << nps
-                          << " score mate " << (MATE_SCORE - score + 1) / 2
-                          << " pv ";
+                for (int i = 0; i < numThreads; i++) {
+                    if (thread_node_counts[i]) {
+                        totalNodes += *thread_node_counts[i];
+                    }
+                }
             }
-            for (int i = 0; i < pvLength[0]; i++) {
-                std::cout << move_to_uci(pvTable[0][i]) << " ";
+            long long nps = (elapsedMs > 0) ? (totalNodes * 1000 / elapsedMs) : (totalNodes * 1000);
+
+            if (!workerSilent) {
+                if (score <= MATE_SCORE - MAX_PLY) {
+                    std::cout << "info depth " << iterativeDepth
+                              << " seldepth " << getSeldepth()
+                              << " nodes " << totalNodes
+                              << " hashfull " << hash_full()
+                              << " time " << elapsedMs
+                              << " nps " << nps
+                              << " score cp " << score
+                              << " pv ";
+                } else {
+                    std::cout << "info depth " << iterativeDepth
+                              << " seldepth " << getSeldepth()
+                              << " nodes " << totalNodes
+                              << " hashfull " << hash_full()
+                              << " time " << elapsedMs
+                              << " nps " << nps
+                              << " score mate " << (MATE_SCORE - score + 1) / 2
+                              << " pv ";
+                }
+                for (int i = 0; i < pvLength[0]; i++) {
+                    std::cout << move_to_uci(pvTable[0][i]) << " ";
+                }
+                std::cout << std::endl;
             }
-            std::cout << std::endl;
-        }
 
-        if (pvLength[0] > 0 && iterativeDepth > 1) {
-            Move currentBestMove = pvTable[0][0];
-            
-            // Move stability check
-            if (currentBestMove == lastIterationBestMove) {
-                bestMoveStableDepths++;
-            } else {
-                bestMoveStableDepths = 0; // 0 = Best move has changed
+            if (pvLength[0] > 0 && iterativeDepth > 1) {
+                Move currentBestMove = pvTable[0][0];
+                if (currentBestMove == lastIterationBestMove) {
+                    bestMoveStableDepths++;
+                } else {
+                    bestMoveStableDepths = 0;
+                }
+                tmMultiplier = 1.0;
+                if (bestMoveStableDepths >= 3) {
+                    tmMultiplier *= 0.6;
+                }
+                lastIterationBestMove = currentBestMove;
             }
 
-            // define the tm multiplier
-            tmMultiplier = 1.0;
-            if (bestMoveStableDepths >= 3) {
-                tmMultiplier *= 0.6; // move is stable. so use %60 
+            elapsedMs = now_ms() - searchStartMs;
+            if (elapsedMs < 0) elapsedMs = 0;
+            long long adjustedSoftTime = (long long)(soft_time_limit_ms * tmMultiplier);
+            long long maxSafeTime = hard_time_limit_ms - 20;
+            if (maxSafeTime < 1) maxSafeTime = 1;
+            if (adjustedSoftTime > maxSafeTime) adjustedSoftTime = maxSafeTime;
+
+            if (time_limited && iterativeDepth >= 3 && elapsedMs >= adjustedSoftTime) {
+                stop_search_local = true;
+                // Main thread signals all helpers to stop
+                if (!workerSilent) {
+                    stop_search_global.store(true, std::memory_order_relaxed);
+                }
+                break;
             }
 
-            lastIterationBestMove = currentBestMove;
+            if (soft_node_limit_reached()) {
+                stop_search_local = true;
+                break;
+            }
         }
 
-        // dynamic soft limit calculation
-        elapsedMs = now_ms() - searchStartMs;
-        if (elapsedMs < 0) elapsedMs = 0;
-        
-        long long adjustedSoftTime = (long long)(soft_time_limit_ms * tmMultiplier);
-        
-        long long maxSafeTime = hard_time_limit_ms - 20;
-        if (maxSafeTime < 1) maxSafeTime = 1;
+        workerScore = score;
+        workerNodes = getNodeCounter();
+        thread_node_counts[threadId] = nullptr;
+        return bestMoveSoFar;
+    };
 
-        if (adjustedSoftTime > maxSafeTime) {
-            adjustedSoftTime = maxSafeTime; 
-        }
-
-        // stop searching
-        if (time_limited && iterativeDepth >= 3 && elapsedMs >= adjustedSoftTime) {
-            stop_search_local = true;
-            break;
-        }
-
-
-
-        if (soft_node_limit_reached()) {
-            stop_search_local = true;
-            break;
-        }
+    // Single thread
+    if (numThreads <= 1) {
+        long long nodes = 0;
+        Move best = searchWorker(board, positionHistory, silent, 1, outScore, nodes, 0);
+        return best;
     }
 
-    outScore = score;
-    return bestMoveSoFar;
+    // Lazy SMP
+    struct WorkerResult {
+        Move bestMove = 0;
+        int16_t score = 0;
+        long long nodes = 0;
+    };
+
+    std::vector<WorkerResult> results(numThreads);
+    std::vector<std::thread> threads;
+    threads.reserve(numThreads);
+
+    for (int t = 0; t < numThreads; t++) {
+        bool isMain = (t == 0);
+        int startDepth = 1;
+
+        threads.emplace_back([&, t, isMain, startDepth]() {
+            results[t].bestMove = searchWorker(
+                board,              // copied by value inside lambda
+                positionHistory,    // copied by value inside lambda
+                isMain ? silent : true,
+                startDepth,
+                results[t].score,
+                results[t].nodes,
+                t
+            );
+        });
+    }
+
+    for (auto& th : threads) {
+        th.join();
+    }
+
+    // Sum nodes and assign to current thread's nodeCount
+    long long totalNodes = 0;
+    for (int t = 0; t < numThreads; t++) {
+        totalNodes += results[t].nodes;
+        thread_node_counts[t] = nullptr;
+    }
+    nodeCount = totalNodes;
+
+    // Use thread 0's result
+    outScore = results[0].score;
+    return results[0].bestMove;
 }
+

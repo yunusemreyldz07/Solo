@@ -200,6 +200,7 @@ int handle_uci_commands(int argc, char* argv[]){
     std::vector<uint64_t> gameHistory;
     gameHistory.reserve(512);
     std::string line;
+    int numThreads = 1;
 
     std::thread searchThread;
     std::atomic<bool> searchRunning{false};
@@ -282,6 +283,9 @@ int handle_uci_commands(int argc, char* argv[]){
                 ttTable.resize(mb);
                 ttTable.clear();
                 std::cout << "info string set Hash to " << mb << " MB, entries " << ttTable.count() << std::endl;
+            } else if (name == "Threads") {
+                numThreads = std::max(1, std::stoi(value));
+                std::cout << "info string set Threads to " << numThreads << std::endl;
             } else if (name == "Use_NNUE") {
                 USE_NNUE = (value == "true");
                 if (USE_NNUE) {
@@ -401,10 +405,9 @@ int handle_uci_commands(int argc, char* argv[]){
             searchRunning.store(true, std::memory_order_relaxed);
 
             
-            // Get the best move within the specified limits and current position history for repetition detection.
-            searchThread = std::thread([&board, &gameHistory, depthLimit = limits.depthLimit, timeToThink = limits.timeToThink, &searchRunning]() {
+            searchThread = std::thread([&board, &gameHistory, depthLimit = limits.depthLimit, timeToThink = limits.timeToThink, &searchRunning, numThreads]() {
                 int16_t score = 0;
-                Move best = getBestMove(board, depthLimit, timeToThink, gameHistory, 0, false, score);
+                Move best = getBestMove(board, depthLimit, timeToThink, gameHistory, 0, false, score, numThreads);
 
                 // If no legal move was found (mate/stalemate), output UCI null move.
                 if (best == 0) {
