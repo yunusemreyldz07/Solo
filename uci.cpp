@@ -328,6 +328,7 @@ int handle_uci_commands(int argc, char* argv[]){
                     fenStr = line.substr(fenStart);
                 }
                 board.loadFEN(fenStr);
+                printBoard(board);
             }
             else {
                 board.reset();

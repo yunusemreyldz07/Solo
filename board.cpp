@@ -545,6 +545,16 @@ void printBoard(const Board& board) {
     }
     std::cout << "  +-----------------+" << std::endl;
     std::cout << "    a b c d e f g h" << std::endl;
+    std::cout << "\nCastling: ";
+    if (board.castling & CASTLE_WK) std::cout << "K";
+    if (board.castling & CASTLE_WQ) std::cout << "Q";
+    if (board.castling & CASTLE_BK) std::cout << "k";
+    if (board.castling & CASTLE_BQ) std::cout << "q";
+    if (board.castling == 0) std::cout << "-";
+    std::cout << std::endl;
+    std::cout << "En Passant: " << ((board.enPassant != -1) ? static_cast<char>('a' + board.enPassant) : '-') << std::endl;
+    std::cout << "Halfmove Clock: " << board.halfMoveClock << std::endl;
+    std::cout << "Side to Move: " << (board.stm == WHITE ? "White" : "Black") << std::endl;
 }
 
 Move uci_to_move(const std::string& uci, const Board& board) {
