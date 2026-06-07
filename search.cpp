@@ -892,7 +892,7 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
 
     for (int t = 0; t < numThreads; t++) {
         bool isMain = (t == 0);
-        int startDepth = 1;
+        int startDepth = isMain ? 1 : 2; // Main thread starts at depth 1, helpers start at depth 2 to diversify
 
         threads.emplace_back([&, t, isMain, startDepth]() {
             results[t].bestMove = searchWorker(
