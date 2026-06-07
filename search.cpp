@@ -690,7 +690,11 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
 
     stop_search_global.store(false, std::memory_order_relaxed);
 
-    // runs one iterative-deepening search ──
+    // Record start time BEFORE thread creation and board copying so that
+    // overhead is counted against the time budget (doing this because we lost 3 times due to time in tests)
+    const long long globalStartMs = now_ms();
+
+    // runs one iterative-deepening search
     // Each thread calls this with its own Board copy
     // Returns best move found by the worker
     auto searchWorker = [&](Board workerBoard,
@@ -699,7 +703,8 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
                             int startDepth,
                             int16_t& workerScore,
                             long long& workerNodes,
-                            int threadId) -> Move {
+                            int threadId,
+                            long long searchStartMs) -> Move {
 
         is_main_thread = (threadId == 0);
         int16_t score = 0;
@@ -714,7 +719,6 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
         thread_node_counts[threadId] = &nodeCount;
         
         clearKillers();
-        const long long searchStartMs = now_ms();
         start_time_ms = searchStartMs;
         if (movetimeMs > 0) {
             long long safeTime = movetimeMs;
@@ -871,7 +875,7 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
     // Single thread
     if (numThreads <= 1) {
         long long nodes = 0;
-        Move best = searchWorker(board, positionHistory, silent, 1, outScore, nodes, 0);
+        Move best = searchWorker(board, positionHistory, silent, 1, outScore, nodes, 0, globalStartMs);
         return best;
     }
 
@@ -898,7 +902,8 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
                 startDepth,
                 results[t].score,
                 results[t].nodes,
-                t
+                t,
+                globalStartMs
             );
         });
     }
