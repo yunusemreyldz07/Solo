@@ -26,6 +26,14 @@ void MovePicker::score_captures() {
         if (ttMove != 0 && move == ttMove) {
             score += SCORE_TT_MOVE;
         }
+        
+        switch (get_promotion_type(move)) {
+            case QUEEN:  score += SCORE_PROMO_QUEEN;  break;
+            case ROOK:   score += SCORE_PROMO_ROOK;   break;
+            case BISHOP: score += SCORE_PROMO_BISHOP; break;
+            case KNIGHT: score += SCORE_PROMO_KNIGHT; break;
+            default: break;
+        }
 
         scores[i] = score;
     }
@@ -44,13 +52,25 @@ void MovePicker::score_quiets() {
             score += SCORE_TT_MOVE;
         }
 
+        int promo = get_promotion_type(move);
+
         if (ply < MAX_PLY && move == killers[0]) {
             score += SCORE_KILLER_1;
         } else if (ply < MAX_PLY && move == killers[1]) {
             score += SCORE_KILLER_2;
+        } else if (promo == QUEEN){
+            score += SCORE_PROMO_QUEEN;
+        } else if (promo == ROOK) {
+            score += SCORE_PROMO_ROOK;
         } else {
             score += get_history_score(board.stm, from, to);
             score += get_conhist_score(piece - 1, to, ply);
+
+            if (promo == BISHOP) {
+            score += SCORE_PROMO_BISHOP;
+            } else if (promo == KNIGHT) {
+                score += SCORE_PROMO_KNIGHT;
+            }
         }
 
         scores[i] = score;
