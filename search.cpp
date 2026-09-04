@@ -246,8 +246,11 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply, SearchStack*
     if (stand_pat > alpha) {
         alpha = stand_pat;
     }
+    int kingSq = -1;
+    king_square(board, board.stm == WHITE, kingSq);
+    MovePicker mp(board, ttHit ? ttEntry.bestMove : 0, 0, 0, 0, 
+        !(kingSq != -1 && is_square_attacked(board, kingSq, board.stm != WHITE))); // If the side to move is in check, apply check evasions
 
-    MovePicker mp(board, ttHit ? ttEntry.bestMove : 0, 0, 0, 0, true);
     int bestEval = stand_pat;
     Move bestMove = 0;
     Move captureMove;
