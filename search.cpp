@@ -401,7 +401,10 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
     MovePicker mp(board, ttMove, killerMoves[ply][0], killerMoves[ply][1], ply);
     Move bestMove = 0;
 
-    if (!mp.has_moves()) {
+    // Reuse the first legal move in the search loop instead of generating
+    // a separate move list just to test for mate/stalemate.
+    const Move firstLegalMove = mp.next_move();
+    if (firstLegalMove == 0) {
         if (inCheck) {
             return -MATE_SCORE + ply;
         }
@@ -494,10 +497,9 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
     int badQuietCount = 0;
     pvLength[ply] = ply;
 
-    Move chosenMove;
     int movesSearched = 0;
 
-    while ((chosenMove = mp.next_move()) != 0) {
+    for (Move chosenMove = firstLegalMove; chosenMove != 0; chosenMove = mp.next_move()) {
 
         if (should_stop_search()) {
             aborted = true;
