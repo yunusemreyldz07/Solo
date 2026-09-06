@@ -1,8 +1,5 @@
 #include "movepicker.h"
 
-// SEE threshold for capture scoring in move ordering (not QS pruning — TODO: move QS SEE pruning into qsearch)
-static constexpr int MP_SEE_THRESHOLD = -82;
-
 MovePicker::MovePicker(Board& b, Move tt, Move k1, Move k2, int p, bool qsearch)
     : board(b), ttMove(tt), ply(p), stage(STAGE_TT), moveCount(0), badCaptureCount(0), currentMoveIndex(0), isQSearch(qsearch) {
     killers[0] = k1;
@@ -153,9 +150,7 @@ Move MovePicker::next_move() {
                 Move move = next_scored_move();
                 if (move != 0) {
                     if (move == ttMove) continue;
-                    // TODO: SEE(move, 0) burada QS pruning amacıyla kullanılıyor;
-                    // bu mantık search.cpp'deki qsearch'e taşınmalı
-                    if (!staticExchangeEvaluation(board, move, 0)) {
+                    if (!isQSearch && !staticExchangeEvaluation(board, move, 0)) {
                         if (badCaptureCount < 256) {
                             badCaptures[badCaptureCount++] = move;
                         }

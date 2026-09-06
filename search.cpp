@@ -237,26 +237,36 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply, SearchStack*
         if (ttEntry.flag == TT_ALPHA && ttScore >= beta) return ttScore;
     }
 
+    int kingSq = -1;
+    king_square(board, board.stm == WHITE, kingSq);
+    bool isInCheck = (kingSq != -1) && (is_square_attacked(board, kingSq, board.stm != WHITE));
+
     int stand_pat = evaluate_board(board);
 
-    if (stand_pat >= beta) {
+    if (stand_pat >= beta && !isInCheck) {
         return stand_pat;
     }
 
-    if (stand_pat > alpha) {
+    if (stand_pat > alpha && !isInCheck) {
         alpha = stand_pat;
     }
-    int kingSq = -1;
-    king_square(board, board.stm == WHITE, kingSq);
+
+    const Move ttMove = ttHit ? ttEntry.bestMove : 0;
     MovePicker mp(board, ttHit ? ttEntry.bestMove : 0, 0, 0, 0, 
-        !(kingSq != -1 && is_square_attacked(board, kingSq, board.stm != WHITE))); // If the side to move is in check, apply check evasions
+        !isInCheck); // If the side to move is in check, apply check evasions
 
     int bestEval = stand_pat;
     Move bestMove = 0;
     Move captureMove;
 
     while ((captureMove = mp.next_move()) != 0) {
+
+        if (captureMove != ttMove && !staticExchangeEvaluation(board, captureMove, 0) && !isInCheck) { // SEE QS PRUNING
+            continue;
+        }
+
         board.makeMove(captureMove);
+        
         int kingSq = -1;
         king_square(board, board.stm == BLACK, kingSq);
         if (kingSq != -1 && is_square_attacked(board, kingSq, board.stm == WHITE)) {
