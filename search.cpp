@@ -237,29 +237,53 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply, SearchStack*
         if (ttEntry.flag == TT_ALPHA && ttScore >= beta) return ttScore;
     }
 
-    int stand_pat = evaluate_board(board);
+    int kingSq = -1;
+    king_square(board, board.stm == WHITE, kingSq);
+    bool isInCheck = (kingSq != -1) && (is_square_attacked(board, kingSq, board.stm != WHITE));
 
-    if (stand_pat >= beta) {
-        return stand_pat;
+    int bestEval;
+    if (isInCheck) {
+        // A static evaluation is not a legal alternative while in check.  All
+        // legal evasions must be searched; if there are none this is mate.
+        bestEval = -VALUE_INF;
+    } else {
+        const int standPat = evaluate_board(board);
+
+        if (standPat >= beta) {
+            return standPat;
+        }
+
+        if (standPat > alpha) {
+            alpha = standPat;
+        }
+
+        bestEval = standPat;
     }
 
-    if (stand_pat > alpha) {
-        alpha = stand_pat;
-    }
+    const Move ttMove = ttHit ? ttEntry.bestMove : 0;
+    MovePicker mp(board, ttHit ? ttEntry.bestMove : 0, 0, 0, 0, 
+        !isInCheck); // If the side to move is in check, apply check evasions
 
-    MovePicker mp(board, ttHit ? ttEntry.bestMove : 0, 0, 0, 0, true);
-    int bestEval = stand_pat;
     Move bestMove = 0;
     Move captureMove;
+    bool hasLegalEvasion = false;
 
     while ((captureMove = mp.next_move()) != 0) {
+
+        if (captureMove != ttMove && !staticExchangeEvaluation(board, captureMove, 0) && !isInCheck) { // SEE QS PRUNING
+            continue;
+        }
+
         board.makeMove(captureMove);
+        
         int kingSq = -1;
         king_square(board, board.stm == BLACK, kingSq);
         if (kingSq != -1 && is_square_attacked(board, kingSq, board.stm == WHITE)) {
             board.unmakeMove(captureMove);
             continue;
         }
+
+        hasLegalEvasion = true;
         
         int eval = -qsearch(board, -beta, -alpha, ply + 1, ss + 1);
         
@@ -277,6 +301,10 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply, SearchStack*
         if (alpha >= beta) {
             break; // Beta cutoff
         }
+    }
+
+    if (isInCheck && !hasLegalEvasion) {
+        bestEval = -MATE_SCORE + ply;
     }
 
     TTFlag flag = TT_EXACT;
