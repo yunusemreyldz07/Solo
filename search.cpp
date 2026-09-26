@@ -334,7 +334,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
     pvLength[ply] = ply; // Initialize PV length for this ply
     if (should_stop_search()) return 0;
     
-    // Check for repetition
+    // Check for draw
     if (ply > 0 && (board.halfMoveClock >= 100 || is_repetition(positionHistory, board.halfMoveClock))){
         return 0; // DRAW
     }
