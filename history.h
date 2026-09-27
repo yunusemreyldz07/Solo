@@ -13,7 +13,7 @@ constexpr int CORRHIST_SCALE = 64;
 extern int historyTable[2][64][64];
 extern int conhistTable[12][64][12][64]; // [prevPiece][prevTo][currPiece][currTo]
 extern thread_local MoveInfo moveStack[MAX_PLY];
-extern thread_local int16_t pawnCorrectionHistory[2][CORRHIST_SIZE];
+extern int16_t pawnCorrectionHistory[2][CORRHIST_SIZE];
 void clear_history();
 void reset_movestack();
 void update_history(const Board& board, int color, int fromSq, int toSq, int depth, const Move badQuiets[256], const int& badQuietCount, int ply);

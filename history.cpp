@@ -2,7 +2,7 @@
 #include <cstring>
 #include <algorithm>
 
-thread_local int16_t pawnCorrectionHistory[2][CORRHIST_SIZE] = {};
+int16_t pawnCorrectionHistory[2][CORRHIST_SIZE] = {};
 int historyTable[2][64][64]; // color x fromSquare x toSquare
 int conhistTable[12][64][12][64]; // [prevPiece][prevTo][currPiece][currTo]
 thread_local MoveInfo moveStack[MAX_PLY];
@@ -19,7 +19,7 @@ void reset_movestack() {
     }
 }
 
-static void update_conhist(int piece, int to, int bonus, int ply) {
+static void update_conhist(int piece, int to, int bonus, int ply) { 
     constexpr int offsets[] = {1, 2, 4};
     for (int offset : offsets) {
         if (ply >= offset && moveStack[ply - offset].piece >= 0) {

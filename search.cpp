@@ -725,7 +725,6 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
     std::vector<uint64_t> searchHistory = positionHistory;
 
     reset_movestack();
-    std::memset(pawnCorrectionHistory, 0, sizeof(pawnCorrectionHistory));
     stop_search_local = false;
     stop_search_global.store(false, std::memory_order_relaxed); // clear any prior UCI stop
     resetNodeCounter();

@@ -11,6 +11,7 @@
 #include <chrono>
 #include <thread>
 #include <algorithm>
+#include <cstring>
 
 #include <fstream>
 
@@ -312,6 +313,7 @@ int handle_uci_commands(int argc, char* argv[]){
             ttTable.clear();
             board.reset();
             clear_history();
+            std::memset(pawnCorrectionHistory, 0, sizeof(pawnCorrectionHistory));
             gameHistory.clear();
             gameHistory.push_back(position_key(board));
         }
