@@ -346,14 +346,16 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
     bool firstMove = true; // for PVS
     int16_t eval = 0; 
 
-    const int16_t staticEval = evaluate_board(board);
-    ss->staticEval = staticEval;
+    const int16_t rawStaticEval = evaluate_board(board);
     ss->cutOffCount = 0;  // Initialize cutoff counter for this node
     const bool pvNode = (beta - alpha > 1);
 
     int kingSq = 0;
     king_square(board, board.stm == WHITE, kingSq);
     bool inCheck = is_square_attacked(board, kingSq, board.stm != WHITE);
+    const int16_t staticEval = inCheck ? rawStaticEval
+                                       : corrected_static_eval(board, rawStaticEval);
+    ss->staticEval = staticEval;
 
     if (inCheck) {
         depth++; // Check extension
@@ -488,6 +490,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
     }
 
     int16_t bestEval = -VALUE_INF;
+    Move bestSearchedMove = 0;
     bool aborted = false;
     
     Move badQuiets[MAX_MOVES];
@@ -634,6 +637,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         // fail soft
         if (eval > bestEval) {
             bestEval = eval;
+            bestSearchedMove = chosenMove;
         }
 
         if (eval > alpha) { 
@@ -681,6 +685,17 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
     } else if (alpha >= beta) {
         flag = TT_ALPHA;
     }
+
+    // Use a bound only when it agrees with the raw NNUE evaluation error
+    if (ply > 0 && !inCheck && !ss->singularMove && bestSearchedMove
+        && is_quiet(bestSearchedMove)
+        && std::abs(bestEval) < MATE_SCORE - MAX_PLY
+        && (flag == TT_EXACT
+            || (flag == TT_ALPHA && bestEval > rawStaticEval)
+            || (flag == TT_BETA && bestEval < rawStaticEval))) {
+        update_pawn_correction(board, rawStaticEval, bestEval, depth);
+    }
+    
     int16_t ttScore = bestEval;
 
     if (ttScore >= MATE_SCORE - MAX_PLY) {
@@ -710,6 +725,7 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
     std::vector<uint64_t> searchHistory = positionHistory;
 
     reset_movestack();
+    std::memset(pawnCorrectionHistory, 0, sizeof(pawnCorrectionHistory));
     stop_search_local = false;
     stop_search_global.store(false, std::memory_order_relaxed); // clear any prior UCI stop
     resetNodeCounter();

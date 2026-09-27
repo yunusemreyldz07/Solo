@@ -2,6 +2,7 @@
 #include <cstring>
 #include <algorithm>
 
+thread_local int16_t pawnCorrectionHistory[2][CORRHIST_SIZE] = {};
 int historyTable[2][64][64]; // color x fromSquare x toSquare
 int conhistTable[12][64][12][64]; // [prevPiece][prevTo][currPiece][currTo]
 thread_local MoveInfo moveStack[MAX_PLY];
@@ -77,4 +78,32 @@ void update_history(const Board& board, int color, int fromSq, int toSq, int dep
 
 int get_history_score(int color, int fromSq, int toSq) {
     return historyTable[color][fromSq][toSq];
+}
+
+int pawn_correction_index(const Board& board) {
+    const uint64_t whitePawns = board.piece[PAWN - 1] & board.color[WHITE];
+    const uint64_t blackPawns = board.piece[PAWN - 1] & board.color[BLACK];
+    uint64_t key = (whitePawns * 0x9e3779b97f4a7c15ULL)
+                 ^ (blackPawns * 0xbf58476d1ce4e5b9ULL); // random constants for mixing
+    key ^= key >> 32; // more mixing
+    key *= 0x94d049bb133111ebULL; // another random constant for mixing
+    return static_cast<int>((key ^ (key >> 32)) & (CORRHIST_SIZE - 1));
+}
+
+int16_t corrected_static_eval(const Board& board, int16_t rawEval) {
+    const int correction = pawnCorrectionHistory[board.stm][pawn_correction_index(board)]
+                         / CORRHIST_SCALE;
+    return static_cast<int16_t>(std::clamp<int>(rawEval + correction,
+                                               -MATE_SCORE + MAX_PLY,
+                                                MATE_SCORE - MAX_PLY));
+}
+
+void update_pawn_correction(const Board& board, int16_t rawEval,
+                            int16_t searchEval, int depth) {
+    int16_t& entry = pawnCorrectionHistory[board.stm][pawn_correction_index(board)];
+    const int target = std::clamp<int>(searchEval - rawEval, -128, 128) * CORRHIST_SCALE;
+    const int weight = std::clamp(depth * 2, 2, 32);
+    const int updated = entry + (target - entry) * weight / 256;
+    entry = static_cast<int16_t>(std::clamp(updated, -128 * CORRHIST_SCALE,
+                                                    128 * CORRHIST_SCALE));
 }
