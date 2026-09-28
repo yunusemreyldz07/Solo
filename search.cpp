@@ -247,7 +247,7 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply, SearchStack*
         // legal evasions must be searched; if there are none this is mate.
         bestEval = -VALUE_INF;
     } else {
-        const int standPat = evaluate_board(board);
+        const int standPat = isInCheck ? evaluate_board(board) : corrected_static_eval(board, evaluate_board(board));
 
         if (standPat >= beta) {
             return standPat;
