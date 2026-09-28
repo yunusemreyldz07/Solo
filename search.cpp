@@ -693,7 +693,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         && (flag == TT_EXACT
             || (flag == TT_ALPHA && bestEval > rawStaticEval)
             || (flag == TT_BETA && bestEval < rawStaticEval))) {
-        update_pawn_correction(board, rawStaticEval, bestEval, depth);
+        update_correction_history(board, rawStaticEval, bestEval, depth);
     }
     
     int16_t ttScore = bestEval;
