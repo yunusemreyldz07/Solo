@@ -102,7 +102,7 @@ void update_pawn_correction(const Board& board, int16_t rawEval,
                             int16_t searchEval, int depth) {
     int16_t& entry = pawnCorrectionHistory[board.stm][pawn_correction_index(board)];
     const int target = std::clamp<int>(searchEval - rawEval, -128, 128) * CORRHIST_SCALE;
-    const int weight = std::clamp(depth * 2, 2, 32);
+    const int weight = std::clamp(depth * 3, 2, 32);
     const int updated = entry + (target - entry) * weight / 256;
     entry = static_cast<int16_t>(std::clamp(updated, -128 * CORRHIST_SCALE,
                                                     128 * CORRHIST_SCALE));
