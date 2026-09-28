@@ -319,7 +319,9 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply, SearchStack*
     if (ttStoreScore >= MATE_SCORE - MAX_PLY) ttStoreScore += ply;
     else if (ttStoreScore <= -MATE_SCORE + MAX_PLY) ttStoreScore -= ply;
 
-    ttTable.writeEntry(hashKey, ttStoreScore, 0, flag, bestMove);
+    if (ttEntry.hashKey == hashKey || ttEntry.depth <= 0) {
+        ttTable.writeEntry(hashKey, ttStoreScore, 0, flag, bestMove);
+    }
 
     return bestEval;
 }
