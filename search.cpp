@@ -852,7 +852,7 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
             // define the tm multiplier
             tmMultiplier = 1.0;
             if (bestMoveStableDepths >= 3) {
-                tmMultiplier *= 0.8; // move is stable. so use %80
+                tmMultiplier *= 0.7; // move is stable. so use %70
             }
 
             lastIterationBestMove = currentBestMove;
