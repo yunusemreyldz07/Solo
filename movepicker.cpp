@@ -108,7 +108,7 @@ bool MovePicker::has_moves() {
     generate_pseudo_moves(board, pseudoMoves, pseudoMoveCount);
 
     for (int i = 0; i < pseudoMoveCount; i++) {
-        if (is_legal(pseudoMoves[i])) {
+        if (::is_legal(board, pseudoMoves[i])) {
             return true;
         }
     }
@@ -116,24 +116,13 @@ bool MovePicker::has_moves() {
     return false;
 }
 
-bool MovePicker::is_legal(Move move) {
-    const bool sideToMove = board.stm == WHITE;
-
-    board.makeMove(move);
-    int kingSq = -1;
-    king_square(board, sideToMove, kingSq);
-    const bool legal = (kingSq != -1) && !is_square_attacked(board, kingSq, board.stm == WHITE);
-    board.unmakeMove(move);
-
-    return legal;
-}
 
 Move MovePicker::next_move() {
     while (true) {
         switch (stage) {
             case STAGE_TT:
                 stage = STAGE_GEN_NOISY;
-                if (ttMove != 0 && is_move_pseudo_legal(board, ttMove) && is_legal(ttMove)) {
+                if (ttMove != 0 && is_move_pseudo_legal(board, ttMove) && ::is_legal(board, ttMove)) {
                     return ttMove;
                 }
                 break;
@@ -156,7 +145,7 @@ Move MovePicker::next_move() {
                         }
                         continue;
                     }
-                    if (!isQSearch && !is_legal(move)) {
+                    if (!isQSearch && !::is_legal(board, move)) {
                         continue;
                     }
                     return move;
@@ -182,7 +171,7 @@ Move MovePicker::next_move() {
                 Move move = next_scored_move();
                 if (move != 0) {
                     if (move == ttMove) continue;
-                    if (!is_legal(move)) {
+                    if (!::is_legal(board, move)) {
                         continue;
                     }
                     return move;
@@ -197,7 +186,7 @@ Move MovePicker::next_move() {
                 if (currentMoveIndex < badCaptureCount) {
                     Move move = badCaptures[currentMoveIndex++];
                     if (move == ttMove) continue;
-                    if (!is_legal(move)) {
+                    if (!::is_legal(board, move)) {
                         continue;
                     }
                     return move;

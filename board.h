@@ -88,7 +88,7 @@ void get_capture_moves(Board& board, Move moves[], int& moveCount);
 
 // Attack detection
 bool is_square_attacked(const Board& board, int sq, bool isWhiteAttacker);
-
+bool is_legal(const Board& board, Move move); 
 int staticExchangeEvaluation(const Board& board, const Move& move, int threshold);
 
 // Pseudo-legal move generation

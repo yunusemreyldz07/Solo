@@ -852,3 +852,151 @@ bool is_insufficient_material(const Board& board) {
     
     return false;
 }
+
+// Ray tables for line and between bitboards, used for legality checks
+namespace {
+
+Bitboard line_bb[64][64];
+Bitboard between_bb[64][64];
+bool ray_tables_initialized = false;
+
+void init_ray_tables() {
+    if (ray_tables_initialized) return;
+
+    for (int sq1 = 0; sq1 < 64; ++sq1) {
+        for (int sq2 = 0; sq2 < 64; ++sq2) {
+            line_bb[sq1][sq2] = 0ULL;
+            between_bb[sq1][sq2] = 0ULL;
+            if (sq1 == sq2) continue;
+
+            // Rook (straight lines) control
+            if (get_rook_attacks(sq1, 0ULL) & (1ULL << sq2)) {
+                line_bb[sq1][sq2] = (get_rook_attacks(sq1, 0ULL) & get_rook_attacks(sq2, 0ULL))
+                                  | (1ULL << sq1) | (1ULL << sq2);
+                between_bb[sq1][sq2] = get_rook_attacks(sq1, 1ULL << sq2)
+                                     & get_rook_attacks(sq2, 1ULL << sq1);
+            }
+            // Bishop (diagonals)
+            else if (get_bishop_attacks(sq1, 0ULL) & (1ULL << sq2)) {
+                line_bb[sq1][sq2] = (get_bishop_attacks(sq1, 0ULL) & get_bishop_attacks(sq2, 0ULL))
+                                  | (1ULL << sq1) | (1ULL << sq2);
+                between_bb[sq1][sq2] = get_bishop_attacks(sq1, 1ULL << sq2)
+                                     & get_bishop_attacks(sq2, 1ULL << sq1);
+            }
+        }
+    }
+    ray_tables_initialized = true;
+}
+
+// According to the given occupancy, does bySide attack the square ?
+inline bool is_sq_attacked_occ(const Board& board, int sq, int bySide, Bitboard occ) {
+    Bitboard oppPieces = board.color[bySide];
+
+    Bitboard pawns = board.piece[PAWN - 1] & oppPieces;
+    if (((bySide == WHITE) ? pawn_attacks[BLACK][sq] : pawn_attacks[WHITE][sq]) & pawns)
+        return true;
+
+    if (knight_attacks[sq] & (board.piece[KNIGHT - 1] & oppPieces))
+        return true;
+
+    if (king_attacks[sq] & (board.piece[KING - 1] & oppPieces))
+        return true;
+
+    Bitboard bishopsQueens = (board.piece[BISHOP - 1] | board.piece[QUEEN - 1]) & oppPieces;
+    if (get_bishop_attacks(sq, occ) & bishopsQueens)
+        return true;
+
+    Bitboard rooksQueens = (board.piece[ROOK - 1] | board.piece[QUEEN - 1]) & oppPieces;
+    if (get_rook_attacks(sq, occ) & rooksQueens)
+        return true;
+
+    return false;
+}
+
+// Returns all bySide pieces attacking the given sq
+inline Bitboard get_attackers_bb(const Board& board, int sq, int bySide, Bitboard occ) {
+    Bitboard oppPieces = board.color[bySide];
+    Bitboard attackers = 0ULL;
+
+    attackers |= ((bySide == WHITE) ? pawn_attacks[BLACK][sq] : pawn_attacks[WHITE][sq])
+               & (board.piece[PAWN - 1] & oppPieces);
+    attackers |= knight_attacks[sq] & (board.piece[KNIGHT - 1] & oppPieces);
+    attackers |= king_attacks[sq]   & (board.piece[KING - 1]   & oppPieces);
+    attackers |= get_bishop_attacks(sq, occ)
+               & ((board.piece[BISHOP - 1] | board.piece[QUEEN - 1]) & oppPieces);
+    attackers |= get_rook_attacks(sq, occ)
+               & ((board.piece[ROOK - 1]   | board.piece[QUEEN - 1]) & oppPieces);
+
+    return attackers;
+}
+
+} // namespace
+
+bool is_legal(const Board& board, Move move) {
+    if (!ray_tables_initialized) init_ray_tables();
+
+    const int us   = board.stm;
+    const int them = other_color(us);
+
+    int kingSq = -1;
+    king_square(board, us == WHITE, kingSq);
+    if (kingSq == -1) return false;
+
+    const int from  = move_from(move);
+    const int to    = move_to(move);
+    const int flags = move_flags(move);
+
+    Bitboard occ = board.color[WHITE] | board.color[BLACK];
+
+    // En passant check
+    if (flags == FLAG_EN_PASSANT) {
+        int capSq = (us == WHITE) ? (to - 8) : (to + 8);
+        Bitboard epOcc = (occ ^ (1ULL << from) ^ (1ULL << capSq)) | (1ULL << to);
+        return !is_sq_attacked_occ(board, kingSq, them, epOcc);
+    }
+
+    // King moves
+    if (from == kingSq) {
+        // Castling
+        if (flags == FLAG_CASTLE_KING || flags == FLAG_CASTLE_QUEEN) {
+            return true;
+        }
+        // Remove the king from the occupancy and check if the destination square is attacked
+        Bitboard kingRemovedOcc = occ ^ (1ULL << kingSq);
+        return !is_sq_attacked_occ(board, to, them, kingRemovedOcc);
+    }
+
+    // Check and pin checks 
+    Bitboard checkers = get_attackers_bb(board, kingSq, them, occ);
+
+    if (checkers) {
+        // if double check, only king can move
+        if (checkers & (checkers - 1)) {
+            return false;
+        }
+
+        // if single check, the move must either capture the checking piece or block the check
+        int checkerSq = lsb(checkers);
+        Bitboard validTargets = (1ULL << checkerSq) | between_bb[kingSq][checkerSq];
+        if ((validTargets & (1ULL << to)) == 0) {
+            return false;
+        }
+    }
+
+    // Pins
+    if ((line_bb[kingSq][from] & (1ULL << to)) == 0) {
+        Bitboard occWithoutFrom = occ ^ (1ULL << from);
+        Bitboard oppPieces = board.color[them];
+
+        if (get_rook_attacks(kingSq, occWithoutFrom) &
+            ((board.piece[ROOK - 1] | board.piece[QUEEN - 1]) & oppPieces)) {
+            return false;
+        }
+        if (get_bishop_attacks(kingSq, occWithoutFrom) &
+            ((board.piece[BISHOP - 1] | board.piece[QUEEN - 1]) & oppPieces)) {
+            return false;
+        }
+    }
+
+    return true;
+}
