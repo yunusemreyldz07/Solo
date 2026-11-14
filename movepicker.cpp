@@ -142,6 +142,16 @@ Move MovePicker::next_move() {
                 moveCount = 0;
                 currentMoveIndex = 0;
                 generate_pseudo_captures(board, moves, moveCount);
+                {
+                    Move quietMoves[256];
+                    int quietMoveCount = 0;
+                    generate_pseudo_quiets(board, quietMoves, quietMoveCount);
+                    for (int i = 0; i < quietMoveCount; i++) {
+                        if (move_flags(quietMoves[i]) == FLAG_PROMO_QUEEN) {
+                            moves[moveCount++] = quietMoves[i];
+                        }
+                    }
+                }
                 score_captures();
                 stage = STAGE_GOOD_NOISY;
                 break;
@@ -173,7 +183,16 @@ Move MovePicker::next_move() {
             case STAGE_GEN_QUIET:
                 moveCount = 0;
                 currentMoveIndex = 0;
-                generate_pseudo_quiets(board, moves, moveCount);
+                {
+                    Move quietMoves[256];
+                    int quietMoveCount = 0;
+                    generate_pseudo_quiets(board, quietMoves, quietMoveCount);
+                    for (int i = 0; i < quietMoveCount; i++) {
+                        if (move_flags(quietMoves[i]) != FLAG_PROMO_QUEEN) {
+                            moves[moveCount++] = quietMoves[i];
+                        }
+                    }
+                }
                 score_quiets();
                 stage = STAGE_QUIET;
                 break;
