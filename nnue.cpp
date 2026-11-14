@@ -159,16 +159,14 @@ int evaluate_nnue(const Accumulator& acc_white, const Accumulator& acc_black, in
     const Accumulator& us = (side_to_move == WHITE) ? acc_white : acc_black;
     const Accumulator& them = (side_to_move == WHITE) ? acc_black : acc_white;
 
-    int32_t raw_sum = 0; 
-
+    int32_t raw_sum = 0;
+    
     for (int i = 0; i < HIDDEN_SIZE; i++) {
-        int16_t v_us = std::clamp(us[i], (int16_t)0, (int16_t)255);
-        int16_t vw_us = v_us * outputWeight[i];
-        raw_sum += v_us * vw_us;
+        int32_t v_us = std::clamp(us[i], (int16_t)0, (int16_t)255);
+        raw_sum += (v_us * v_us) * outputWeight[i];
 
-        int16_t v_them = std::clamp(them[i], (int16_t)0, (int16_t)255);
-        int16_t vw_them = v_them * outputWeight[HIDDEN_SIZE + i];
-        raw_sum += v_them * vw_them;
+        int32_t v_them = std::clamp(them[i], (int16_t)0, (int16_t)255);
+        raw_sum += (v_them * v_them) * outputWeight[HIDDEN_SIZE + i];
     }
 
     // Turning it into a real chess score (QA=255, QB=64, Scale=400)
