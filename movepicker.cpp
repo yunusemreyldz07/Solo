@@ -1,4 +1,5 @@
 #include "movepicker.h"
+#include "bitboard.h"
 
 MovePicker::MovePicker(Board& b, Move tt, Move k1, Move k2, int p, bool qsearch)
     : board(b), ttMove(tt), ply(p), stage(STAGE_TT), moveCount(0), badCaptureCount(0), currentMoveIndex(0), isQSearch(qsearch) {
@@ -117,15 +118,58 @@ bool MovePicker::has_moves() {
 }
 
 bool MovePicker::is_legal(Move move) {
-    const bool sideToMove = board.stm == WHITE;
+    const int us = board.stm;
+    const int them = us ^ 1;
+    const int from = move_from(move);
+    const int to = move_to(move);
+    const int flags = move_flags(move);
 
-    board.makeMove(move);
+    if (flags == FLAG_CASTLE_KING || flags == FLAG_CASTLE_QUEEN) {
+        return true;
+    }
+
     int kingSq = -1;
-    king_square(board, sideToMove, kingSq);
-    const bool legal = (kingSq != -1) && !is_square_attacked(board, kingSq, board.stm == WHITE);
-    board.unmakeMove(move);
+    if (piece_type(board.mailbox[from]) == KING) {
+        kingSq = to;
+    } else {
+        Bitboard kingBB = board.piece[KING - 1] & board.color[us];
+        if (!kingBB) return false;
+        kingSq = lsb(kingBB);
+    }
 
-    return legal;
+    Bitboard occ = board.color[WHITE] | board.color[BLACK];
+    occ &= ~(1ULL << from);
+    occ |= (1ULL << to);
+
+    int epCapSq = -1;
+    if (flags == FLAG_EN_PASSANT) {
+        epCapSq = (us == WHITE) ? (to - 8) : (to + 8);
+        occ &= ~(1ULL << epCapSq);
+    }
+
+    Bitboard toMask = ~(1ULL << to);
+    Bitboard themRooks   = (board.piece[ROOK   - 1] & board.color[them]) & toMask;
+    Bitboard themBishops = (board.piece[BISHOP - 1] & board.color[them]) & toMask;
+    Bitboard themQueens  = (board.piece[QUEEN  - 1] & board.color[them]) & toMask;
+
+    if (get_rook_attacks(kingSq, occ) & (themRooks | themQueens)) return false;
+    if (get_bishop_attacks(kingSq, occ) & (themBishops | themQueens)) return false;
+
+    Bitboard themKnights = (board.piece[KNIGHT - 1] & board.color[them]) & toMask;
+    if (knight_attacks[kingSq] & themKnights) return false;
+
+    Bitboard themPawns = (board.piece[PAWN - 1] & board.color[them]) & toMask;
+    if (epCapSq != -1) {
+        themPawns &= ~(1ULL << epCapSq);
+    }
+    if (pawn_attacks[us][kingSq] & themPawns) return false;
+
+    if (kingSq == to) {
+        Bitboard themKing = board.piece[KING - 1] & board.color[them];
+        if (king_attacks[kingSq] & themKing) return false;
+    }
+
+    return true;
 }
 
 Move MovePicker::next_move() {
@@ -156,7 +200,7 @@ Move MovePicker::next_move() {
                         }
                         continue;
                     }
-                    if (!isQSearch && !is_legal(move)) {
+                    if (!is_legal(move)) {
                         continue;
                     }
                     return move;
