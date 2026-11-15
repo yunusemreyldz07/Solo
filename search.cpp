@@ -276,13 +276,6 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply, SearchStack*
 
         board.makeMove(captureMove);
         
-        int kingSq = -1;
-        king_square(board, board.stm == BLACK, kingSq);
-        if (kingSq != -1 && is_square_attacked(board, kingSq, board.stm == WHITE)) {
-            board.unmakeMove(captureMove);
-            continue;
-        }
-
         hasLegalEvasion = true;
         
         int eval = -qsearch(board, -beta, -alpha, ply + 1, ss + 1);
@@ -585,14 +578,6 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
 
         moveStack[ply] = {board.mailbox[move_from(chosenMove)] - 1, move_to(chosenMove)};
         board.makeMove(chosenMove);
-
-        // Legality check
-        int kSq = -1;
-        king_square(board, board.stm == BLACK, kSq);
-        if (kSq != -1 && is_square_attacked(board, kSq, board.stm == WHITE)) {
-            board.unmakeMove(chosenMove);
-            continue;
-        }
 
         positionHistory.push_back(board.hash); // Add new position to history for repetition detection
         const int fullDepth = depth - 1 + extension;
