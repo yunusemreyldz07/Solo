@@ -5,9 +5,11 @@ STRIP := strip
 ifeq ($(OS),Windows_NT)
     EXE ?= Solo.exe
     LINKER := -static -static-libgcc -static-libstdc++ -s
+    CLEAN := cmd /C "if exist $(EXE) del /Q $(EXE) & if exist *.o del /Q *.o"
 else
     EXE ?= Solo
     LINKER := -lm -s
+    CLEAN := rm -f $(EXE) $(EXE).exe *.o
 endif
 
 
@@ -30,6 +32,5 @@ $(EXE): $(SOURCES)
 	@echo "Solo binary was successfully created."
 
 clean:
-	@rm -f $(EXE) $(EXE).exe
-	@rm -f *.o
+	@$(CLEAN)
 	@echo "Removed solo binaries."

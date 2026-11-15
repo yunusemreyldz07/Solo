@@ -1,5 +1,5 @@
 # Solo - UCI Chess Engine
-**Version 2.1.0**
+**Version 2.2.0**
 
 A bitboard-based chess engine with advanced search techniques and a neural network evaluation.
 
@@ -16,23 +16,24 @@ Aggression was tested in earlier commits but was not released. I am planning to 
   - Iterative deepening
   - Aspiration windows
   - Principal Variation Search (PVS)
-  - Null Move Pruning (NMP) with adaptive reduction
+  - Null Move Pruning (NMP) with verification search and TT-adjusted margin
   - Late Move Reductions (LMR)
-  - Late Move Pruning (LMP)
-  - Reverse Futility Pruning (RFP)
+  - Late Move Pruning (LMP) with improving heuristic
+  - Reverse Futility Pruning (RFP) with improving heuristic
   - Futility Pruning (FP)
   - Razoring
   - Static Exchange Evaluation (SEE) pruning
   - Internal Iterative Reductions (IIR)
   - Check extensions
-  - Singular Extensions (SE) with Multicut
+  - Singular Extensions (SE) with Multicut and Negative Extensions
   - History Pruning
   - Quiescence search with SEE filtering
   - Repetition / draw detection in search
-  - Soft/Hard time management
+  - Soft/Hard time management with best-move stability
   - Transposition Table
 
 - **Move Ordering**:
+  - Staged move generation via MovePicker (lazy generation)
   - TT move first
   - Good captures (SEE ≥ threshold) with MVV-LVA scoring
   - Killer moves
@@ -40,7 +41,7 @@ Aggression was tested in earlier commits but was not released. I am planning to 
   - Bad captures ordered last
 
 - **Evaluation**:
-  - 512HL NNUE trained on ~1 billion self-play generated positions.
+  - 512HL NNUE with lazy accumulator updates, trained on ~1 billion self-play generated positions.
 
 ## Building
 
@@ -59,14 +60,20 @@ make clean
 
 If you don't have Make:
 
-# Windows (MinGW/MSYS2)
-```g++ -O3 -flto -march=native -std=c++23 -ffast-math -pthread main.cpp board.cpp movegen.cpp search.cpp evaluation.cpp bitboard.cpp history.cpp nnue.cpp datagen.cpp -o Solo.exe -static -static-libgcc -static-libstdc++```
+**Windows (MinGW/MSYS2)**
+```bash
+g++ -O3 -flto -march=native -std=c++23 -ffast-math -pthread main.cpp board.cpp movegen.cpp movepicker.cpp search.cpp evaluation.cpp bitboard.cpp history.cpp nnue.cpp datagen.cpp -o Solo.exe -static -static-libgcc -static-libstdc++
+```
 
-# Linux
-```g++ -O3 -flto -march=native -std=c++23 -ffast-math -pthread main.cpp board.cpp movegen.cpp search.cpp evaluation.cpp bitboard.cpp history.cpp nnue.cpp datagen.cpp -o Solo -lm```
+**Linux**
+```bash
+g++ -O3 -flto -march=native -std=c++23 -ffast-math -pthread main.cpp board.cpp movegen.cpp movepicker.cpp search.cpp evaluation.cpp bitboard.cpp history.cpp nnue.cpp datagen.cpp -o Solo -lm
+```
 
-# macOS (Apple Silicon)
-```clang++ -O3 -flto -march=native -std=c++23 -ffast-math -pthread main.cpp board.cpp movegen.cpp search.cpp evaluation.cpp bitboard.cpp history.cpp nnue.cpp datagen.cpp -o Solo -lm```
+**macOS (Apple Silicon)**
+```bash
+clang++ -O3 -flto -march=native -std=c++23 -ffast-math -pthread main.cpp board.cpp movegen.cpp movepicker.cpp search.cpp evaluation.cpp bitboard.cpp history.cpp nnue.cpp datagen.cpp -o Solo -lm
+```
 
 ## Usage
 
@@ -98,14 +105,14 @@ Runs a built-in benchmark on 12 positions at depth 8.
 
 ## Strength
 
-- **CCRL ELO**: [~2900+](https://computerchess.org.uk/ccrl/4040/cgi/engine_details.cgi?print=Details&each_game=0&eng=Solo%201.6.0%2064-bit#Solo_1_6_0_64-bit)
-- **Lichess ELO**: [~2500](https://lichess.org/@/SoloBot)
+- **CCRL ELO**: [~3100+](https://computerchess.org.uk/404/cgi/engine_details.cgi?print=Details&each_game=1&eng=Solo%202.1.0%2064-bit#Solo_2_1_0_64-bit)
+- **Lichess ELO**: [~2600](https://lichess.org/@/SoloBot)
 
 ## Roadmap
 
 - [ ] Multi-threading support (Lazy SMP)
 - [ ] Correction history
-- [ ] Better NNUE net with aggressiveness
+- [ ] Better NNUE net with aggressiveness (input/output buckets, 1024HL)
 
 ## Project Structure
 ```
@@ -113,7 +120,10 @@ Runs a built-in benchmark on 12 positions at depth 8.
 ├── board.cpp/h         # Board representation & move make/unmake
 ├── evaluation.cpp/h    # Tuned tapered evaluation & mobility
 ├── history.cpp/h       # History, continuation history
-├── movegen.cpp         # Legal move generation
+├── move.h              # Move encoding, flags & helpers
+├── movegen.cpp         # Move generation
+├── movepicker.cpp/h    # Staged move picker (lazy generation)
+├── piece.h             # Piece types, colors & helpers
 ├── search.cpp/h        # Negamax search, pruning & reductions
 ├── uci.cpp/h           # UCI protocol handler
 ├── types.h             # Basic types & constants

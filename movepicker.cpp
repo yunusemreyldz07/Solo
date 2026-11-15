@@ -1,7 +1,5 @@
 #include "movepicker.h"
-
-// SEE threshold for capture scoring in move ordering (not QS pruning — TODO: move QS SEE pruning into qsearch)
-static constexpr int MP_SEE_THRESHOLD = -82;
+#include "bitboard.h"
 
 MovePicker::MovePicker(Board& b, Move tt, Move k1, Move k2, int p, bool qsearch)
     : board(b), ttMove(tt), ply(p), stage(STAGE_TT), moveCount(0), badCaptureCount(0), currentMoveIndex(0), isQSearch(qsearch) {
@@ -26,6 +24,14 @@ void MovePicker::score_captures() {
         if (ttMove != 0 && move == ttMove) {
             score += SCORE_TT_MOVE;
         }
+        
+        switch (get_promotion_type(move)) {
+            case QUEEN:  score += SCORE_PROMO_QUEEN;  break;
+            case ROOK:   score += SCORE_PROMO_ROOK;   break;
+            case BISHOP: score += SCORE_PROMO_BISHOP; break;
+            case KNIGHT: score += SCORE_PROMO_KNIGHT; break;
+            default: break;
+        }
 
         scores[i] = score;
     }
@@ -44,13 +50,25 @@ void MovePicker::score_quiets() {
             score += SCORE_TT_MOVE;
         }
 
+        int promo = get_promotion_type(move);
+
         if (ply < MAX_PLY && move == killers[0]) {
             score += SCORE_KILLER_1;
         } else if (ply < MAX_PLY && move == killers[1]) {
             score += SCORE_KILLER_2;
+        } else if (promo == QUEEN){
+            score += SCORE_PROMO_QUEEN;
+        } else if (promo == ROOK) {
+            score += SCORE_PROMO_ROOK;
         } else {
             score += get_history_score(board.stm, from, to);
             score += get_conhist_score(piece - 1, to, ply);
+
+            if (promo == BISHOP) {
+            score += SCORE_PROMO_BISHOP;
+            } else if (promo == KNIGHT) {
+                score += SCORE_PROMO_KNIGHT;
+            }
         }
 
         scores[i] = score;
@@ -100,15 +118,58 @@ bool MovePicker::has_moves() {
 }
 
 bool MovePicker::is_legal(Move move) {
-    const bool sideToMove = board.stm == WHITE;
+    const int us = board.stm;
+    const int them = us ^ 1;
+    const int from = move_from(move);
+    const int to = move_to(move);
+    const int flags = move_flags(move);
 
-    board.makeMove(move);
+    if (flags == FLAG_CASTLE_KING || flags == FLAG_CASTLE_QUEEN) {
+        return true;
+    }
+
     int kingSq = -1;
-    king_square(board, sideToMove, kingSq);
-    const bool legal = (kingSq != -1) && !is_square_attacked(board, kingSq, board.stm == WHITE);
-    board.unmakeMove(move);
+    if (piece_type(board.mailbox[from]) == KING) {
+        kingSq = to;
+    } else {
+        Bitboard kingBB = board.piece[KING - 1] & board.color[us];
+        if (!kingBB) return false;
+        kingSq = lsb(kingBB);
+    }
 
-    return legal;
+    Bitboard occ = board.color[WHITE] | board.color[BLACK];
+    occ &= ~(1ULL << from);
+    occ |= (1ULL << to);
+
+    int epCapSq = -1;
+    if (flags == FLAG_EN_PASSANT) {
+        epCapSq = (us == WHITE) ? (to - 8) : (to + 8);
+        occ &= ~(1ULL << epCapSq);
+    }
+
+    Bitboard toMask = ~(1ULL << to);
+    Bitboard themRooks   = (board.piece[ROOK   - 1] & board.color[them]) & toMask;
+    Bitboard themBishops = (board.piece[BISHOP - 1] & board.color[them]) & toMask;
+    Bitboard themQueens  = (board.piece[QUEEN  - 1] & board.color[them]) & toMask;
+
+    if (get_rook_attacks(kingSq, occ) & (themRooks | themQueens)) return false;
+    if (get_bishop_attacks(kingSq, occ) & (themBishops | themQueens)) return false;
+
+    Bitboard themKnights = (board.piece[KNIGHT - 1] & board.color[them]) & toMask;
+    if (knight_attacks[kingSq] & themKnights) return false;
+
+    Bitboard themPawns = (board.piece[PAWN - 1] & board.color[them]) & toMask;
+    if (epCapSq != -1) {
+        themPawns &= ~(1ULL << epCapSq);
+    }
+    if (pawn_attacks[us][kingSq] & themPawns) return false;
+
+    if (kingSq == to) {
+        Bitboard themKing = board.piece[KING - 1] & board.color[them];
+        if (king_attacks[kingSq] & themKing) return false;
+    }
+
+    return true;
 }
 
 Move MovePicker::next_move() {
@@ -133,15 +194,13 @@ Move MovePicker::next_move() {
                 Move move = next_scored_move();
                 if (move != 0) {
                     if (move == ttMove) continue;
-                    // TODO: SEE(move, 0) burada QS pruning amacıyla kullanılıyor;
-                    // bu mantık search.cpp'deki qsearch'e taşınmalı
-                    if (!staticExchangeEvaluation(board, move, 0)) {
+                    if (!isQSearch && !staticExchangeEvaluation(board, move, 0)) {
                         if (badCaptureCount < 256) {
                             badCaptures[badCaptureCount++] = move;
                         }
                         continue;
                     }
-                    if (!isQSearch && !is_legal(move)) {
+                    if (!is_legal(move)) {
                         continue;
                     }
                     return move;

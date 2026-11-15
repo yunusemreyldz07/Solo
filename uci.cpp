@@ -11,11 +11,12 @@
 #include <chrono>
 #include <thread>
 #include <algorithm>
+#include <cstring>
 
 #include <fstream>
 
 
-#define VERSION "2.1.0"
+#define VERSION "2.2.0"
 
 TranspositionTable ttTable;
 
@@ -312,6 +313,7 @@ int handle_uci_commands(int argc, char* argv[]){
             ttTable.clear();
             board.reset();
             clear_history();
+            std::memset(pawnCorrectionHistory, 0, sizeof(pawnCorrectionHistory));
             gameHistory.clear();
             gameHistory.push_back(position_key(board));
         }
@@ -328,6 +330,7 @@ int handle_uci_commands(int argc, char* argv[]){
                     fenStr = line.substr(fenStart);
                 }
                 board.loadFEN(fenStr);
+                printBoard(board);
             }
             else {
                 board.reset();
