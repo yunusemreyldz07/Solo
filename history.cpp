@@ -19,6 +19,10 @@ void reset_movestack() {
     }
 }
 
+void set_movestack(int ply, int piece, int to) {
+    moveStack[ply] = {piece, to};
+}
+
 static void update_conhist(int piece, int to, int bonus, int ply) { 
     constexpr int offsets[] = {1, 2, 4};
     for (int offset : offsets) {
