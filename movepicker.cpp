@@ -88,14 +88,6 @@ Move MovePicker::next_scored_move() {
         }
     }
 
-    Move bestMove = moves[bestIndex];
-    int score = scores[bestIndex];
-
-    for (int i = bestIndex; i > currentMoveIndex; i--) {
-        moves[i] = moves[i - 1];
-        scores[i] = scores[i - 1];
-    }
-
     std::swap(moves[currentMoveIndex], moves[bestIndex]);
     std::swap(scores[currentMoveIndex], scores[bestIndex]);
 
