@@ -96,11 +96,10 @@ Move MovePicker::next_scored_move() {
         scores[i] = scores[i - 1];
     }
 
-    moves[currentMoveIndex] = bestMove;
-    scores[currentMoveIndex] = score;
+    std::swap(moves[currentMoveIndex], moves[bestIndex]);
+    std::swap(scores[currentMoveIndex], scores[bestIndex]);
 
-    currentMoveIndex++;
-    return bestMove;
+    return moves[currentMoveIndex++];
 }
 
 bool MovePicker::has_moves() {
