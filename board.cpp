@@ -713,10 +713,9 @@ static Bitboard all_attackers_to_sq(const Board& board, int sq, Bitboard occ) {
     attackers |= knight_attacks[sq] & board.piece[KNIGHT - 1];
     // Kings
     attackers |= king_attacks[sq] & board.piece[KING - 1];
-    // Bishops and Queens (diagonal)
-    attackers |= bishop_attacks_on_the_fly(sq, occ) & (board.piece[BISHOP - 1] | board.piece[QUEEN - 1]);
-    // Rooks and Queens (orthogonal)
-    attackers |= rook_attacks_on_the_fly(sq, occ) & (board.piece[ROOK - 1] | board.piece[QUEEN - 1]);
+    // Sliders
+    attackers |= get_bishop_attacks(sq, occ) & (board.piece[BISHOP - 1] | board.piece[QUEEN - 1]);
+    attackers |= get_rook_attacks(sq, occ) & (board.piece[ROOK - 1] | board.piece[QUEEN - 1]);
     
     return attackers;
 }
@@ -794,11 +793,11 @@ int staticExchangeEvaluation(const Board& board, const Move& move, int threshold
 
         // A diagonal move may reveal bishop or queen attackers
         if (nextVictim == PAWN || nextVictim == BISHOP || nextVictim == QUEEN)
-            attackers |= bishop_attacks_on_the_fly(to, occupied) & bishops;
+            attackers |= get_bishop_attacks(to, occupied) & bishops;
 
         // A vertical or horizontal move may reveal rook or queen attackers
         if (nextVictim == ROOK || nextVictim == QUEEN)
-            attackers |= rook_attacks_on_the_fly(to, occupied) & rooks;
+            attackers |= get_rook_attacks(to, occupied) & rooks;
 
         // Make sure we did not add any already used attacks
         attackers &= occupied;
