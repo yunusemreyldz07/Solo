@@ -475,7 +475,7 @@ void Board::loadFEN(const std::string& fen) {
         this->enPassant = enPassantField[0] - 'a';
         int epRow = stm == 0 ? 2 : 5;
         int epSq = row_col_to_sq(epRow, this->enPassant);
-        if (!is_pawn_attack_possible(*this, stm == 0 ? false : true, epSq)) {
+        if (!is_pawn_attack_possible(*this, stm == WHITE, epSq)) {
             this->enPassant = -1;
         }
     } else {
