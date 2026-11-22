@@ -336,7 +336,6 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         return qsearch(board, alpha, beta, ply, ss);
     }
 
-    bool firstMove = true; // for PVS
     int16_t eval = 0; 
 
     const int16_t rawStaticEval = evaluate_board(board);
@@ -489,7 +488,8 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
     pvLength[ply] = ply;
 
     Move chosenMove;
-    int movesSearched = 0;
+    int legalMoves = 0;
+    int searchedMoves = 0;
 
     while ((chosenMove = mp.next_move()) != 0) {
 
@@ -498,7 +498,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
             break;
         }
 
-        const int moveIndex = movesSearched++;
+        const int moveIndex = legalMoves++;
 
         if (chosenMove == ss->singularMove) {
             continue;
@@ -574,6 +574,9 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
             }
         }
 
+        const bool firstMove = (searchedMoves == 0);
+        searchedMoves++;
+
         set_movestack(ply, board.mailbox[move_from(chosenMove)] - 1, move_to(chosenMove));
         board.makeMove(chosenMove);
 
@@ -581,7 +584,6 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         const int fullDepth = depth - 1 + extension;
         if (firstMove){
             eval = -negamax(board, fullDepth, -beta, -alpha, ply + 1, ss + 1, pvTable, pvLength, positionHistory);
-            firstMove = false;
         } else {
 
             int reduction = 0;
@@ -651,7 +653,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         }
     }
 
-    if (movesSearched == 0) {
+    if (legalMoves == 0) {
         if (inCheck) {
             return -MATE_SCORE + ply;
         }
