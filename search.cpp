@@ -358,7 +358,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
 
     int16_t originalAlpha = alpha;
     uint64_t hashKey = board.hash; 
-    TTEntry& ttEntry = ttTable.getEntry(hashKey);
+    TTEntry ttEntry = ttTable.getEntry(hashKey);
     Move ttMove = 0;
     bool ttHit = false;
     if (!ss->singularMove && ttEntry.hashKey == hashKey) {
@@ -390,8 +390,6 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
     if ((!ttHit || ttMove == 0 || ttEntry.depth < depth - 3) && depth >= 4) {
         depth--;
     }
-
-
 
     MovePicker mp(board, ttMove, killerMoves[ply][0], killerMoves[ply][1], ply);
     Move bestMove = 0;
@@ -447,7 +445,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         board.hash ^= zobrist().epFile[oldEp];
         board.hash ^= zobrist().epFile[8];
 
-        moveStack[ply] = {-1, -1}; // Sentinel for null move
+        set_movestack(ply, -1, -1); // Sentinel for null move
         positionHistory.push_back(board.hash);
 
         int R = 3 + (depth / 3);
@@ -576,7 +574,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
             }
         }
 
-        moveStack[ply] = {board.mailbox[move_from(chosenMove)] - 1, move_to(chosenMove)};
+        set_movestack(ply, board.mailbox[move_from(chosenMove)] - 1, move_to(chosenMove));
         board.makeMove(chosenMove);
 
         positionHistory.push_back(board.hash); // Add new position to history for repetition detection
@@ -692,7 +690,6 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
     if (!ss->singularMove) {
         ttTable.writeEntry(hashKey, ttScore, static_cast<int8_t>(depth), flag, bestMove);
     }
-
 
     return bestEval;
 }

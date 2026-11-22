@@ -1,6 +1,7 @@
 #include "board.h"
 #include "bitboard.h"
 #include "types.h"
+#include <iostream>
 
 enum {PAWN_ALL, PAWN_CAPTURES, PAWN_QUIETS };
 
@@ -395,17 +396,128 @@ void generate_pseudo_quiets(const Board& board, Move* moves, int& moveCount) {
 
 bool is_move_pseudo_legal(const Board& board, Move move) {
     if (move == 0) return false;
-    int from = move_from(move);
-    int piece = piece_at_sq(board, from);
 
-    if (piece == 0 || piece_color(piece) != board.stm) return false;
+    const int from  = move_from(move);
+    const int to    = move_to(move);
+    const int flags = move_flags(move);
 
-    Move moves[256];
-    int count = 0;
-    generate_pseudo_captures(board, moves, count);
-    generate_pseudo_quiets(board, moves, count);
-    for (int i = 0; i < count; i++) {
-        if (moves_equal(moves[i], move)) return true;
+    if (from == to) return false;
+    if (flags == 6 || flags == 7) return false; // unused flags
+
+    const int us   = board.stm;
+    const int them = other_color(us);
+
+    const int pc = board.mailbox[from];
+    if (pc == EMPTY || piece_color(pc) != us) return false;
+
+    const int pt       = piece_type(pc);
+    const int captured = board.mailbox[to];
+
+    // Can't take your own piece
+    if (captured != EMPTY && piece_color(captured) == us) return false;
+
+    // if the taken piece is a king then it's illegal :')
+    if (captured != EMPTY && piece_type(captured) == KING) return false;
+
+    // Castling
+    if (flags == FLAG_CASTLE_KING || flags == FLAG_CASTLE_QUEEN) {
+        if (pt != KING) return false;
+
+        const Bitboard occ = board_occupancy(board);
+        const bool oppIsWhite = (them == WHITE);
+
+        if (flags == FLAG_CASTLE_KING) {
+            if (us == WHITE) {
+                return from == 4 && to == 6 &&
+                       (board.castling & CASTLE_WK) &&
+                       board.mailbox[7] == W_ROOK &&
+                       (occ & ((1ULL << 5) | (1ULL << 6))) == 0 &&
+                       !is_square_attacked_bb(board, 4, oppIsWhite) &&
+                       !is_square_attacked_bb(board, 5, oppIsWhite) &&
+                       !is_square_attacked_bb(board, 6, oppIsWhite);
+            } else {
+                return from == 60 && to == 62 &&
+                       (board.castling & CASTLE_BK) &&
+                       board.mailbox[63] == B_ROOK &&
+                       (occ & ((1ULL << 61) | (1ULL << 62))) == 0 &&
+                       !is_square_attacked_bb(board, 60, oppIsWhite) &&
+                       !is_square_attacked_bb(board, 61, oppIsWhite) &&
+                       !is_square_attacked_bb(board, 62, oppIsWhite);
+            }
+        } else { // FLAG_CASTLE_QUEEN
+            if (us == WHITE) {
+                return from == 4 && to == 2 &&
+                       (board.castling & CASTLE_WQ) &&
+                       board.mailbox[0] == W_ROOK &&
+                       (occ & ((1ULL << 1) | (1ULL << 2) | (1ULL << 3))) == 0 &&
+                       !is_square_attacked_bb(board, 4, oppIsWhite) &&
+                       !is_square_attacked_bb(board, 3, oppIsWhite) &&
+                       !is_square_attacked_bb(board, 2, oppIsWhite);
+            } else {
+                return from == 60 && to == 58 &&
+                       (board.castling & CASTLE_BQ) &&
+                       board.mailbox[56] == B_ROOK &&
+                       (occ & ((1ULL << 57) | (1ULL << 58) | (1ULL << 59))) == 0 &&
+                       !is_square_attacked_bb(board, 60, oppIsWhite) &&
+                       !is_square_attacked_bb(board, 59, oppIsWhite) &&
+                       !is_square_attacked_bb(board, 58, oppIsWhite);
+            }
+        }
     }
-    return false;
+
+    // En passant
+    if (flags == FLAG_EN_PASSANT) {
+        if (pt != PAWN || board.enPassant == -1 || captured != EMPTY) return false;
+
+        const int epRow = (us == WHITE) ? 2 : 5;
+        const int epSq  = row_col_to_sq(epRow, board.enPassant);
+        if (to != epSq) return false;
+
+        const int capSq = (us == WHITE) ? (to - 8) : (to + 8);
+        if (board.mailbox[capSq] != make_piece(PAWN, them)) return false;
+
+        return (pawn_attacks[us][from] & (1ULL << to)) != 0;
+    }
+
+    // Pawn moves
+    if (pt == PAWN) {
+        const bool capFlag = is_capture(move);
+        if (capFlag != (captured != EMPTY)) return false;
+
+        const bool toPromoRank = (us == WHITE) ? (to >= 56) : (to <= 7);
+        if (is_promotion(move) != toPromoRank) return false;
+
+        // pawn take (take+promotion aswell)
+        if (capFlag) {
+            return (pawn_attacks[us][from] & (1ULL << to)) != 0;
+        }
+
+        const int push = (us == WHITE) ? 8 : -8;
+
+        // double push
+        if (flags == FLAG_DOUBLE_PAWN) {
+            const bool onStartRank = (us == WHITE) ? (from >= 8 && from <= 15)
+                                                   : (from >= 48 && from <= 55);
+            return onStartRank && (to == from + 2 * push) && (board.mailbox[from + push] == EMPTY);
+        }
+
+        // one push (push + promo aswell)
+        return to == from + push;
+    }
+
+    // All others
+    if (flags != FLAG_QUIET && flags != FLAG_CAPTURE) return false;
+    if ((flags == FLAG_CAPTURE) != (captured != EMPTY)) return false;
+
+    const Bitboard toBit = 1ULL << to;
+    const Bitboard occ   = board_occupancy(board);
+
+    switch (pt) {
+        case KNIGHT: return (knight_attacks[from] & toBit) != 0;
+        case BISHOP: return (get_bishop_attacks(from, occ) & toBit) != 0;
+        case ROOK:   return (get_rook_attacks(from, occ) & toBit) != 0;
+        case QUEEN:  return ((get_bishop_attacks(from, occ) | get_rook_attacks(from, occ)) & toBit) != 0;
+        case KING:   return (king_attacks[from] & toBit) != 0;
+        default:     return false;
+    }
 }

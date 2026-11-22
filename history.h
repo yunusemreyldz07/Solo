@@ -22,5 +22,5 @@ int get_conhist_score(int piece, int to, int ply);
 int pawn_correction_index(const Board& board);
 int16_t corrected_static_eval(const Board& board, int16_t rawEval);
 void update_pawn_correction(const Board& board, int16_t rawEval, int16_t searchEval, int depth);
-
+void set_movestack(int ply, int piece, int to);
 #endif
