@@ -590,7 +590,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
 
             if (depth > 1 && is_quiet(chosenMove)) {
                 int lmrTableDepth = std::min(depth, 255);
-                int lmrTableMovesSearched = std::min(moveIndex, 255);
+                int lmrTableMovesSearched = std::min(searchedMoves, 255);
                 reduction = LMR_TABLE[lmrTableDepth][lmrTableMovesSearched]; // Increase reduction with depth
                 if (isKiller) reduction--; // Reduce killer moves less
                 if (reduction < 0) reduction = 0;
