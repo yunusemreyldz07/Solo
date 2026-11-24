@@ -812,7 +812,7 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
         
         
         if (!silent) {
-            if (score <= MATE_SCORE - MAX_PLY) {
+            if (score <= MATE_SCORE - MAX_PLY && score >= -MATE_SCORE + MAX_PLY) {
                 std::cout << "info depth " << iterativeDepth
                           << " seldepth " << getSeldepth()
                           << " nodes " << nodes
@@ -828,7 +828,7 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
                           << " hashfull " << hash_full()
                           << " time " << elapsedMs
                           << " nps " << nps
-                          << " score mate " << (MATE_SCORE - score + 1) / 2
+                          << " score mate " << ((score > 0) ? ((MATE_SCORE - score + 1) / 2) : (-(MATE_SCORE + score + 1) / 2))
                           << " pv ";
             }
             for (int i = 0; i < pvLength[0]; i++) {
