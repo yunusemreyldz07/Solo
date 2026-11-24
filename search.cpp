@@ -216,7 +216,7 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply, SearchStack*
     nodeCount++;
     updateSeldepth(ply);
 
-    if (ply >= 128) {
+    if (ply >= MAX_PLY) {
         return evaluate_board(board);
     }
 
@@ -324,8 +324,16 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
 
     updateSeldepth(ply);
 
-    pvLength[ply] = ply; // Initialize PV length for this ply
     if (should_stop_search()) return 0;
+
+    if (ply >= MAX_PLY) {
+        return evaluate_board(board);
+    }
+
+    pvLength[ply] = ply; // Initialize PV length for this ply
+    if (ply == MAX_PLY - 1) {
+        return evaluate_board(board);
+    }
     
     // Check for draw
     if (ply > 0 && (board.halfMoveClock >= 100 || is_repetition(positionHistory, board.halfMoveClock))){
