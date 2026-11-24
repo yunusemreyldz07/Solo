@@ -759,8 +759,10 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
         const bool useAspiration = (iterativeDepth >= 4);
 
         if (useAspiration) {
-            alpha = std::max<int16_t>(alpha, static_cast<int16_t>(score - delta));
-            beta = std::min<int16_t>(beta, static_cast<int16_t>(score + delta));
+            alpha = static_cast<int16_t>(std::clamp<int>(
+                static_cast<int>(score) - delta, -VALUE_INF, VALUE_INF));
+            beta = static_cast<int16_t>(std::clamp<int>(
+                static_cast<int>(score) + delta, -VALUE_INF, VALUE_INF));
         }
 
         while (true) {
@@ -775,15 +777,19 @@ Move getBestMove(Board& board, int maxDepth, int movetimeMs, const std::vector<u
                 break;
             }
 
-            if (searchScore <= alpha) {
+            if (searchScore <= alpha && alpha > -VALUE_INF) {
                 delta = std::min(4096, delta + delta * 9 / 5);
-                alpha = std::max<int16_t>(-VALUE_INF, static_cast<int16_t>(searchScore - delta));
+                alpha = (delta >= 4096)
+                    ? -VALUE_INF
+                    : static_cast<int16_t>(std::clamp<int>(static_cast<int>(searchScore) - delta, -VALUE_INF, VALUE_INF));
                 continue;
             }
 
-            if (searchScore >= beta) {
+            if (searchScore >= beta && beta < VALUE_INF) {
                 delta = std::min(4096, delta + delta * 9 / 5);
-                beta = std::min<int16_t>(VALUE_INF, static_cast<int16_t>(searchScore + delta));
+                beta = (delta >= 4096)
+                    ? VALUE_INF
+                    : static_cast<int16_t>(std::clamp<int>(static_cast<int>(searchScore) + delta, -VALUE_INF, VALUE_INF));
                 continue;
             }
 
