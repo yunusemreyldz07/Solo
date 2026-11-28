@@ -40,7 +40,6 @@ struct Board {
     int8_t enPassant;
     uint8_t stm;
 
-    std::vector<Move> moveHistory;
     std::vector<UndoState> undoStack;
 
     int8_t mailbox[64];

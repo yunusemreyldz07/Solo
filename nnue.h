@@ -38,10 +38,10 @@ struct DirtyState {
     uint8_t type; // 0 = Quiet, 1 = Capture, 2 = Castling
 };
 
-void applyDirtyState(Accumulator* __restrict__ acc, const DirtyState& dirty);
+void applyDirtyState(Accumulator* __restrict__ dst, const Accumulator* __restrict__ src, const DirtyState& dirty);
 
-void applyQuietBoth(Accumulator* __restrict__ acc, int wAdd, int wSub, int bAdd, int bSub);
-void applyCaptureBoth(Accumulator* __restrict__ acc, int wAdd, int wSub1, int wSub2, int bAdd, int bSub1, int bSub2);
-void applyCastlingBoth(Accumulator* __restrict__ acc, int wAdd1, int wAdd2, int wSub1, int wSub2, int bAdd1, int bAdd2, int bSub1, int bSub2);
+void applyQuietBoth(Accumulator* __restrict__ dst, const Accumulator* __restrict__ src, int wAdd, int wSub, int bAdd, int bSub);
+void applyCaptureBoth(Accumulator* __restrict__ dst, const Accumulator* __restrict__ src, int wAdd, int wSub1, int wSub2, int bAdd, int bSub1, int bSub2);
+void applyCastlingBoth(Accumulator* __restrict__ dst, const Accumulator* __restrict__ src, int wAdd1, int wAdd2, int wSub1, int wSub2, int bAdd1, int bAdd2, int bSub1, int bSub2);
 
 #endif

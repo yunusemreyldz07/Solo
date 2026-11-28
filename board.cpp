@@ -109,11 +109,23 @@ inline void move_piece(Board& board, int piece, int fromSq, int toSq) {
     add_piece(board, piece, toSq);
 }
 
+constexpr uint8_t CASTLE_MASK[64] = {
+    13, 15, 15, 15, 12, 15, 15, 14,
+    15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15,
+     7, 15, 15, 15,  3, 15, 15, 11
+};
+
 } // namespace
 
 Board::Board() {
     accStack = std::make_unique<std::array<Accumulator, 2>[]>(MAX_GAME_PLY);
     accValid = std::make_unique<bool[]>(MAX_GAME_PLY);
+    undoStack.reserve(512);
     reset();
 }
 
@@ -124,7 +136,6 @@ void Board::reset() {
     stm = WHITE;
     enPassant = -1;
     halfMoveClock = 0;
-    moveHistory.clear();
     undoStack.clear();
 
     hash = position_key(*this);
@@ -247,20 +258,11 @@ void Board::makeMove(Move move) {
     undoStack.push_back(st);
     accValid[undoStack.size()] = false;
 
-    // Add to move history for continuation history
-    moveHistory.push_back(move);
-
     // Hash: remove side-to-move, old ep and old castling
     hash ^= z.side;
     int oldEp = (enPassant != -1) ? (enPassant % 8) : 8;
     hash ^= z.epFile[oldEp];
-
-    int oldCastling = 0;
-    if (castling & CASTLE_WK) oldCastling |= 1;
-    if (castling & CASTLE_WQ) oldCastling |= 2;
-    if (castling & CASTLE_BK) oldCastling |= 4;
-    if (castling & CASTLE_BQ) oldCastling |= 8;
-    hash ^= z.castling[oldCastling];
+    hash ^= z.castling[castling];
 
     // Remove moving piece from origin
     hash ^= z.piece[piece_to_zobrist_index(movingPiece)][fromSq];
@@ -325,38 +327,7 @@ void Board::makeMove(Move move) {
         enPassant = -1;
     }
 
-    if (movingPiece == W_ROOK && fromSq == 7){
-        castling &= ~CASTLE_WK;
-    }
-    else if (movingPiece == W_ROOK && fromSq == 0){
-        castling &= ~CASTLE_WQ;
-    }
-    else if (movingPiece == B_ROOK && fromSq == 63){
-        castling &= ~CASTLE_BK;
-    }
-    else if (movingPiece == B_ROOK && fromSq == 56){
-        castling &= ~CASTLE_BQ;
-    }
-
-    if (movingPiece == W_KING) {
-        castling &= ~(CASTLE_WK | CASTLE_WQ);
-    }
-    if (movingPiece == B_KING) {
-        castling &= ~(CASTLE_BK | CASTLE_BQ);
-    }
-
-    if (st.capturedPiece == W_ROOK && toSq == 7) {
-        castling &= ~CASTLE_WK;
-    }
-    if (st.capturedPiece == W_ROOK && toSq == 0) {
-        castling &= ~CASTLE_WQ;
-    }
-    if (st.capturedPiece == B_ROOK && toSq == 56) {
-        castling &= ~CASTLE_BQ;
-    }
-    if (st.capturedPiece == B_ROOK && toSq == 63) {
-        castling &= ~CASTLE_BK;
-    }
+    castling &= CASTLE_MASK[fromSq] & CASTLE_MASK[toSq];
 
     hash ^= z.castling[castling];
 
@@ -367,11 +338,6 @@ void Board::makeMove(Move move) {
 }
 
 void Board::unmakeMove(Move move) {
-    // Remove from move history
-    if (!moveHistory.empty()) {
-        moveHistory.pop_back();
-    }
-
     UndoState st = this->undoStack.back();
     this->undoStack.pop_back();
     const int fromSq = move_from(move);
@@ -432,7 +398,6 @@ void Board::loadFEN(const std::string& fen) {
     color[BLACK] = 0ULL;
     for (int i = 0; i < 64; i++) mailbox[i] = 0;
     castling = 0;
-    moveHistory.clear();
     undoStack.clear();
 
     std::istringstream ss(fen);
@@ -507,12 +472,8 @@ void Board::ensureAccumulator(int ply) {
     }
 
     for (int i = lastValid + 1; i <= ply; i++) {
-        // Copy base state from the previous ply
-        accStack[i] = accStack[i - 1];
-        
-        // Apply the dirty changes from the move that led to this ply
-        applyDirtyState(&accStack[i][0], undoStack[i - 1].dirty);
-        
+        // Compute current accumulator directly from previous ply + dirty changes
+        applyDirtyState(&accStack[i][0], &accStack[i - 1][0], undoStack[i - 1].dirty);
         accValid[i] = true;
     }
 }

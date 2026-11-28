@@ -3,8 +3,8 @@
 #include <algorithm>
 
 int16_t pawnCorrectionHistory[2][CORRHIST_SIZE] = {};
-int historyTable[2][64][64]; // color x fromSquare x toSquare
-int conhistTable[12][64][12][64]; // [prevPiece][prevTo][currPiece][currTo]
+int16_t historyTable[2][64][64]; // color x fromSquare x toSquare
+int16_t conhistTable[12][64][12][64]; // [prevPiece][prevTo][currPiece][currTo]
 thread_local MoveInfo moveStack[MAX_PLY];
 constexpr int HISTORY_MAX = 16384;
 
@@ -29,8 +29,8 @@ static void update_conhist(int piece, int to, int bonus, int ply) {
         if (ply >= offset && moveStack[ply - offset].piece >= 0) {
             int prevPiece = moveStack[ply - offset].piece;
             int prevTo = moveStack[ply - offset].to;
-            int& entry = conhistTable[prevPiece][prevTo][piece][to];
-            entry += bonus - (entry * std::abs(bonus)) / HISTORY_MAX;
+            int16_t& entry = conhistTable[prevPiece][prevTo][piece][to];
+            entry = static_cast<int16_t>(entry + bonus - (static_cast<int>(entry) * std::abs(bonus)) / HISTORY_MAX);
         }
     }
 }
@@ -53,8 +53,8 @@ void update_history(const Board& board, int color, int fromSq, int toSq, int dep
     int bonus = std::min(10 + 200 * depth, 4096);
 
     // Main history update for best move
-    int& bestScore = historyTable[color][fromSq][toSq];
-    bestScore += bonus - (bestScore * std::abs(bonus)) / HISTORY_MAX;
+    int16_t& bestScore = historyTable[color][fromSq][toSq];
+    bestScore = static_cast<int16_t>(bestScore + bonus - (static_cast<int>(bestScore) * std::abs(bonus)) / HISTORY_MAX);
 
     // Conhist update for best move
     int movedPiece = board.mailbox[fromSq] - 1;
@@ -71,8 +71,8 @@ void update_history(const Board& board, int color, int fromSq, int toSq, int dep
         int malus = bonus + (i * 30);
 
         // Main history malus
-        int& badScore = historyTable[color][badFrom][badTo];
-        badScore -= malus + (badScore * std::abs(malus)) / HISTORY_MAX;
+        int16_t& badScore = historyTable[color][badFrom][badTo];
+        badScore = static_cast<int16_t>(badScore - (malus + (static_cast<int>(badScore) * std::abs(malus)) / HISTORY_MAX));
 
         // Conhist malus
         int badPiece = board.mailbox[badFrom] - 1;

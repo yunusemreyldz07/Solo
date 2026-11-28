@@ -2,6 +2,7 @@
 #define SEARCH_H
 
 #include "board.h"
+#include <bit>
 
 extern void initLMRtables();
 void resetNodeCounter();
@@ -39,6 +40,7 @@ struct TTEntry { // 16 bytes total
 class TranspositionTable {
 private:
     std::vector<TTEntry> table;
+    size_t mask = 0;
 
 public:
     TranspositionTable() {
@@ -47,10 +49,12 @@ public:
 
     void resize(int mbSize) {
         // 1 MB = 1024 * 1024 byte
-        size_t numEntries = (mbSize * 1024ULL * 1024ULL) / sizeof(TTEntry);
+        size_t numEntries = std::bit_floor((mbSize * 1024ULL * 1024ULL) / sizeof(TTEntry));
+        if (numEntries == 0) numEntries = 1;
         
         table.clear();
         table.resize(numEntries);
+        mask = numEntries - 1;
     }
 
     void clear() {
@@ -66,7 +70,11 @@ public:
 
     // TT get entry by hash key
     TTEntry& getEntry(uint64_t hashKey) {
-        return table[hashKey % table.size()];
+        return table[hashKey & mask];
+    }
+
+    void prefetch(uint64_t hashKey) const {
+        __builtin_prefetch(&table[hashKey & mask]);
     }
 
     void writeEntry(uint64_t hashKey, int16_t score, int8_t depth, TTFlag flag, Move bestMove) {

@@ -10,8 +10,8 @@ struct MoveInfo {
 constexpr int CORRHIST_SIZE = 1 << 14; // 16384
 constexpr int CORRHIST_SCALE = 64;
 // History table: [color][fromSquare][toSquare]
-extern int historyTable[2][64][64];
-extern int conhistTable[12][64][12][64]; // [prevPiece][prevTo][currPiece][currTo]
+extern int16_t historyTable[2][64][64];
+extern int16_t conhistTable[12][64][12][64]; // [prevPiece][prevTo][currPiece][currTo]
 extern thread_local MoveInfo moveStack[MAX_PLY];
 extern int16_t pawnCorrectionHistory[2][CORRHIST_SIZE];
 void clear_history();

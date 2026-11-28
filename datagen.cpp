@@ -140,7 +140,7 @@ std::string get_fen(const Board& board) {
     fen.push_back(' ');
     fen += std::to_string(board.halfMoveClock);
     fen.push_back(' ');
-    const int full_move_number = 1 + static_cast<int>(board.moveHistory.size() / 2);
+    const int full_move_number = 1 + static_cast<int>(board.undoStack.size() / 2);
     fen += std::to_string(full_move_number);
 
     return fen;

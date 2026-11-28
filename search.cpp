@@ -275,6 +275,7 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply, SearchStack*
         }
 
         board.makeMove(captureMove);
+        ttTable.prefetch(board.hash);
         
         hasLegalEvasion = true;
         
@@ -445,6 +446,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         int oldEp = (prevEnPassant != -1) ? (prevEnPassant % 8) : 8;
         board.hash ^= zobrist().epFile[oldEp];
         board.hash ^= zobrist().epFile[8];
+        ttTable.prefetch(board.hash);
 
         set_movestack(ply, -1, -1); // Sentinel for null move
         positionHistory.push_back(board.hash);
@@ -583,6 +585,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
 
         set_movestack(ply, board.mailbox[move_from(chosenMove)] - 1, move_to(chosenMove));
         board.makeMove(chosenMove);
+        ttTable.prefetch(board.hash);
 
         positionHistory.push_back(board.hash); // Add new position to history for repetition detection
         const int fullDepth = depth - 1 + extension;
