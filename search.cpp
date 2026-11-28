@@ -402,16 +402,6 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         depth--;
     }
 
-    MovePicker mp(board, ttMove, killerMoves[ply][0], killerMoves[ply][1], ply);
-    Move bestMove = 0;
-
-    if (!mp.has_moves()) {
-        if (inCheck) {
-            return -MATE_SCORE + ply;
-        }
-        return 0; // Stalemate
-    }
-
     int ttAdjustedEval = staticEval;
 
     if (!ss->singularMove && ttMove && !inCheck &&
@@ -491,6 +481,8 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         }
     }
 
+    MovePicker mp(board, ttMove, killerMoves[ply][0], killerMoves[ply][1], ply);
+    Move bestMove = 0;
     int16_t bestEval = -VALUE_INF;
     Move bestSearchedMove = 0;
     bool aborted = false;
@@ -665,15 +657,15 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
         }
     }
 
+    if (aborted) {
+        return bestEval; // Don't write to TT if search was aborted.
+    }
+
     if (legalMoves == 0) {
         if (inCheck) {
             return -MATE_SCORE + ply;
         }
         return 0; // Stalemate
-    }
-
-    if (aborted) {
-        return bestEval; // Don't write to TT if search was aborted.
     }
 
     TTFlag flag = TT_EXACT;
