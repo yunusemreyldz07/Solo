@@ -375,7 +375,7 @@ int16_t negamax(Board& board, int depth, int16_t alpha, int16_t beta, int ply, S
     if (!ss->singularMove && ttEntry.hashKey == hashKey) {
         ttMove = ttEntry.bestMove;
         ttHit = true;
-        if (ttEntry.depth >= depth && ply > 0) {
+        if (!pvNode && ttEntry.depth >= depth && ply > 0) {
             int16_t ttScore = ttEntry.score;
 
             if (ttScore >= MATE_SCORE - MAX_PLY) {
