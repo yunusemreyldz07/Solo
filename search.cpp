@@ -282,6 +282,10 @@ int16_t qsearch(Board& board, int16_t alpha, int16_t beta, int ply, SearchStack*
         
         board.unmakeMove(captureMove);
 
+        if (should_stop_search()) {
+            return 0;
+        }
+
         if (eval > bestEval) {
             bestEval = eval;
         }
